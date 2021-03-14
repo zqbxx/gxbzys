@@ -137,7 +137,9 @@ class VideoHead:
 
         vh = VideoHead()
         vh.raw_file_size = file_size
-        block_num = int(file_size / default_block_size) + 1
+        block_num = int(file_size / default_block_size)
+        if file_size % default_block_size != 0:
+            block_num += 1
 
         for _ in range(block_num):
             vbi = VideoBlockInfo()
