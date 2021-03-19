@@ -1,8 +1,10 @@
 import os
-from typing import List
+from typing import List, Union, Dict
 from io import BytesIO
 from urllib.parse import urlparse, parse_qs
 import platform
+
+from typing.io import IO
 
 from keymanager.encryptor import encrypt_data1, decrypt_data1
 from gxbzys.mpv import (
@@ -144,7 +146,100 @@ class VideoHead:
         for _ in range(block_num):
             vbi = VideoBlockInfo()
             vh.block_index.append(vbi)
+
+        vh.update_head_size()
         return vh
+
+
+class VideoInfoException(Exception):
+    pass
+
+
+class VideoInfo:
+
+    HEAD_ALL_INFO_LEN_LEN = HEAD_BLOCK_SIZE_LEN # 所有信息长度的数值占用的字节数
+    HEAD_ALL_INFO_CNT_LEN = 2 # 所有信息数量的数值占用的字节数
+
+    INFO_DATA_LEN_LEN = HEAD_BLOCK_SIZE_LEN  # 信息数据长度的数值占用的字节数
+    INFO_NAME_MAX_LENGTH = 1024 # 信息名字最大长度
+    INFO_BODY_MAX_LEN = pow(2, HEAD_ALL_INFO_LEN_LEN * 8) - 1  # 信息数据的最大长度
+
+    PAD_DATA = b'\0'
+
+    def __init__(self):
+        self.info: Dict[bytes, bytes] = {}
+        self.video_info_len = 0
+        self.video_info_cnt = 0
+
+    def add_info(self, info_name: bytes, info_data: bytes):
+        if len(info_name) > VideoInfo.INFO_NAME_MAX_LENGTH:
+            raise VideoInfoException(f'name too long, name should < {VideoInfo.INFO_NAME_MAX_LENGTH}')
+        self.info[info_name] = info_data
+
+    def del_info(self, info_name: bytes):
+        del self.info[info_name]
+
+    def update_video_info_len(self):
+        self.video_info_len = self.HEAD_ALL_INFO_LEN_LEN + self.HEAD_ALL_INFO_CNT_LEN
+        self.video_info_cnt = 0
+        for name in self.info:
+            data = self.info[name]
+            self.video_info_len += (self.INFO_NAME_MAX_LENGTH + self.INFO_DATA_LEN_LEN)
+            self.video_info_len += len(data)
+            if self.video_info_len > self.INFO_BODY_MAX_LEN:
+                raise VideoInfoException(f'video info data too long, length should < {self.INFO_BODY_MAX_LEN}')
+            self.video_info_cnt += 1
+
+    def to_bytes(self) -> bytes:
+
+        self.update_video_info_len()
+        bos = BytesIO()
+        bos.write(self.video_info_len.to_bytes(self.HEAD_ALL_INFO_LEN_LEN, byteorder='big'))  # 3
+        bos.write(self.video_info_cnt.to_bytes(self.HEAD_ALL_INFO_CNT_LEN, byteorder='big'))  # 2
+        for name in self.info:
+            data = self.info[name]
+            bos.write(self.pad(name, self.INFO_NAME_MAX_LENGTH))  # 1024
+            bos.write(len(data).to_bytes(self.INFO_DATA_LEN_LEN, byteorder='big'))  # 3
+            bos.write(data) # dynamic
+
+        bos.seek(0)
+        return bos.read()
+
+    @staticmethod
+    def from_bytes(data):
+        vi = VideoInfo()
+        bis = BytesIO(data)
+        b_video_info_len = bis.read(VideoInfo.HEAD_ALL_INFO_LEN_LEN)
+        b_video_info_cnt = bis.read(VideoInfo.HEAD_ALL_INFO_CNT_LEN)
+        vi.video_info_len = int.from_bytes(b_video_info_len, byteorder='big')
+        vi.video_info_cnt = int.from_bytes(b_video_info_cnt, byteorder='big')
+        for i in range(vi.video_info_cnt):
+            b_name = bis.read(VideoInfo.INFO_NAME_MAX_LENGTH)
+            b_name = VideoInfo.unpad(b_name)
+            b_data_len = bis.read(VideoInfo.INFO_DATA_LEN_LEN)
+            data_len = int.from_bytes(b_data_len, byteorder='big')
+            b_data = bis.read(data_len)
+            vi.info[b_name] = b_data
+        vi.update_video_info_len()
+        return vi
+
+    @staticmethod
+    def pad(data: bytes, length: int) -> bytes:
+        data_len = len(data)
+        pad_len = length - data_len
+        if pad_len <= 0:
+            return data[:length]
+        return pad_len * VideoInfo.PAD_DATA + data
+
+    @staticmethod
+    def unpad(data:bytes) -> bytes:
+        result = bytearray(b'')
+        data_array = [b'%c' % i for i in data]
+        for b in data_array:
+            if b == VideoInfo.PAD_DATA:
+                continue
+            result += b
+        return bytes(result)
 
 
 def write_encrypt_video(key, head: VideoHead, input_stream, output_stream, default_block_size=BLOCK_SIZE):

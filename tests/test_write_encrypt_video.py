@@ -1,7 +1,7 @@
 import os
 from unittest import TestCase
 
-from gxbzys.video import VideoHead, write_encrypt_video, Stream
+from gxbzys.video import VideoHead, write_encrypt_video, Stream, VideoInfo
 from keymanager.utils import write_file, read_file
 
 
@@ -86,3 +86,17 @@ class TestWrite_encrypt_video(TestCase):
 
         stream.close()
         reader.close()
+
+    def test_video_info(self):
+        vi = VideoInfo()
+        name_bytes = b'testvideo.mkv'
+        vi.add_info(b'name', name_bytes)
+        file_content = read_file('./data/photo-1615529328331-f8917597711f.webp')
+        vi.add_info(b'thumbnail0', file_content)
+        video_info_data = vi.to_bytes()
+        new_vi = vi.from_bytes(video_info_data)
+        assert vi.video_info_cnt == 2
+        assert vi.video_info_cnt == new_vi.video_info_cnt
+        assert vi.video_info_len == new_vi.video_info_len
+        assert vi.info[b'name'].hex() == new_vi.info[b'name'].hex()
+        assert vi.info[b'thumbnail0'].hex() == new_vi.info[b'thumbnail0'].hex()
