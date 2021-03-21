@@ -72,7 +72,7 @@ class TestWrite_encrypt_video(TestCase):
             print(f'write video block {current}, total: {total}')
 
         # 写入加密数据
-        write_encrypt_video(key, head, video_info_list, reader, writer,videowritehook=videowritehook)
+        write_encrypt_video(key, head, video_info_list, reader, writer, default_block_size=default_block_size, videowritehook=videowritehook)
         writer.close()
         reader.close()
 
@@ -139,16 +139,39 @@ class TestWrite_encrypt_video(TestCase):
 
         seek(stream, reader, 10)
 
-        read_and_assert(stream, reader, 2000)
+        read_and_assert(stream, reader, 1024)
+        print('---')
+        seek(stream, reader, 3000)
 
-        seek(stream, reader, 1000)
-
-        read_and_assert(stream, reader, 10240)
+        read_and_assert(stream, reader, 3000)
 
         video_info_reader = stream.video_info_reader
+        video_info_reader.open()
         video_info_list = []
         for video_info in video_info_reader.read():
             video_info_list.append(video_info)
+
+        file_list_1 = ['./data/icons/Apple.png',
+                       './data/icons/Facebook.png',
+                       './data/icons/Linkedin.png',
+                       './data/icons/Tiktok.png',
+                       './data/icons/Twitter.png']
+
+        file_list_2 = ['./data/icons/bell.png',
+                       './data/icons/camera.png']
+
+        file_list = [file_list_1, file_list_2]
+        video_info_list_1 = []
+        for f_list in file_list:
+            video_info = VideoInfo()
+            for f in f_list:
+                _, file = os.path.split(f)
+                name, ext = os.path.splitext(file)
+                video_info.add_info(name.encode('utf-8'), read_file(f))
+            video_info_list_1.append(video_info)
+
+        for i, video_info in enumerate(video_info_list):
+            assert video_info.to_bytes().hex() == video_info_list_1[i].to_bytes().hex()
 
         stream.close()
         reader.close()
