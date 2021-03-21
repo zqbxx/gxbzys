@@ -35,14 +35,10 @@ class TestWrite_encrypt_video(TestCase):
         assert head.video_info_index[2].length == 300
 
     def test_write_encrypt_video(self):
-        #default_block_size = 1024
-        #input_file = './enc/photo-1615529328331-f8917597711f.webp'
-        #output_file = './enc/photo-1615529328331-f8917597711f.enc.webp'
-        #key_file = './enc/key.key'
-        default_block_size = 1024 * 1024
-        input_file = r'F:\影视\800.HD1280高清国语中字版.mp4'
-        output_file = r'F:\影视\800.HD1280高清国语中字版.enc.mp4'
-        key_file = r'F:\影视\800.HD1280高清国语中字版.key'
+        default_block_size = 1024
+        input_file = './enc/photo-1615529328331-f8917597711f.webp'
+        output_file = './enc/photo-1615529328331-f8917597711f.enc.webp'
+        key_file = './enc/key.key'
 
         # 生成密钥
         head: VideoHead = VideoHead.from_raw_file(input_file, default_block_size=default_block_size)
