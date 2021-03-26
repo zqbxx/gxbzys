@@ -12,7 +12,7 @@ from gxbzys.mpv import (
     MPV, register_protocol,
     StreamOpenFn, StreamCloseFn, StreamReadFn, StreamSeekFn, StreamSizeFn
 )
-
+from keymanager.key import KEY_CACHE
 
 BLOCK_SIZE = 1024 * 1024
 HEAD_FILE_MARKER = b'EV00001'
@@ -36,6 +36,12 @@ VideoHeadType = TypeVar("VideoHeadType", bound="VideoHead")
 
 
 class VideoContentIndex:
+
+    iv_len = 16  #: 偏移向量占用的字节长度
+    start_pos_bytes_len = 5  #: 数据块在加密文件中起始位置的数值占用的字节长度
+    raw_start_pos_bytes_len = 5  #: 数据块在原始文件中起始位置的数值占用的字节长度
+    data_bytes_cnt_len = 3  #：未加密的数据块大小的数值占用的字节长度
+    block_bytes_cnt_len = 3  #：加密以后的数据块大小的数值占用的字节长度
 
     """
     加密视频文件块索引，保存在VideoHead中
@@ -63,13 +69,14 @@ class VideoContentIndex:
         return input_stream.read(self.block_size)
 
     def to_bytes(self) -> bytes:
+        cls = self.__class__
         bos = BytesIO()
 
         b_iv = self.iv
-        b_start_pos = self.start_pos.to_bytes(HEAD_RAW_FILE_LEN, byteorder='big')
-        b_raw_start_pos = self.raw_start_pos.to_bytes(HEAD_RAW_FILE_LEN, byteorder='big')
-        b_data_size = self.data_size.to_bytes(HEAD_BLOCK_SIZE_LEN, byteorder='big')
-        b_block_size = self.block_size.to_bytes(HEAD_BLOCK_SIZE_LEN, byteorder='big')
+        b_start_pos = self.start_pos.to_bytes(cls.start_pos_bytes_len, byteorder='big')
+        b_raw_start_pos = self.raw_start_pos.to_bytes(cls.raw_start_pos_bytes_len, byteorder='big')
+        b_data_size = self.data_size.to_bytes(cls.data_bytes_cnt_len, byteorder='big')
+        b_block_size = self.block_size.to_bytes(cls.block_bytes_cnt_len, byteorder='big')
 
         bos.write(b_iv)  # 16
         bos.write(b_start_pos)  # 5
@@ -86,11 +93,11 @@ class VideoContentIndex:
         bis = BytesIO(data)
         vbi = VideoContentIndex()
 
-        b_iv = bis.read(HEAD_IV_LEN)
-        b_start_pos = bis.read(HEAD_RAW_FILE_LEN)
-        b_raw_start_pos = bis.read(HEAD_RAW_FILE_LEN)
-        b_data_size = bis.read(HEAD_BLOCK_SIZE_LEN)
-        b_block_size = bis.read(HEAD_BLOCK_SIZE_LEN)
+        b_iv = bis.read(cls.iv_len)
+        b_start_pos = bis.read(cls.start_pos_bytes_len)
+        b_raw_start_pos = bis.read(cls.raw_start_pos_bytes_len)
+        b_data_size = bis.read(cls.data_bytes_cnt_len)
+        b_block_size = bis.read(cls.block_bytes_cnt_len)
 
         vbi.iv = b_iv
         vbi.start_pos = int.from_bytes(b_start_pos, byteorder='big')
@@ -143,6 +150,20 @@ class VideoHead:
             bos.write(vbi.to_bytes())  # 32
 
         return bos.getvalue()
+
+    @classmethod
+    def is_encrypt_video(cls, f: Union[str, IO]) -> bool:
+        stream = None
+        close = False
+        if isinstance(f, str):
+            stream = open(f, 'rb')
+            close = True
+        if isinstance(f, IO):
+            stream = f
+        b_marker = stream.read(HEAD_FILE_MARKER_LEN)
+        if close:
+            stream.close()
+        return b_marker.hex() == HEAD_FILE_MARKER.hex()
 
     @classmethod
     def get_head_block(cls, reader) -> bytes:
@@ -230,12 +251,12 @@ class VideoInfoIndex:
         bos.seek(0)
         return bos.getvalue()
 
-    @staticmethod
-    def from_bytes(data):
+    @classmethod
+    def from_bytes(cls, data):
         bis = BytesIO(data)
         video_info_index= VideoInfoIndex()
-        video_info_index.length= int.from_bytes(bis.read(video_info_index.video_info_bytes_cnt_len), byteorder='big')
-        video_info_index.iv = bis.read(video_info_index.video_info_iv_len)
+        video_info_index.length= int.from_bytes(bis.read(cls.video_info_bytes_cnt_len), byteorder='big')
+        video_info_index.iv = bis.read(cls.video_info_iv_len)
         return video_info_index
 
 
@@ -328,36 +349,36 @@ class VideoInfo:
             video_info_index.length += self._get_data_length(data)
         return video_info_index
 
-    @staticmethod
-    def from_bytes(data):
+    @classmethod
+    def from_bytes(cls, data):
         vi = VideoInfo()
         bis = BytesIO(data)
-        b_video_info_cnt = bis.read(VideoInfo.head_all_info_bytes_cnt_len)
+        b_video_info_cnt = bis.read(cls.head_all_info_bytes_cnt_len)
         vi.video_info_cnt = int.from_bytes(b_video_info_cnt, byteorder='big')
         for i in range(vi.video_info_cnt):
-            b_name = bis.read(VideoInfo.name_max_length)
+            b_name = bis.read(cls.name_max_length)
             b_name = VideoInfo.unpad(b_name)
-            b_data_len = bis.read(VideoInfo.data_bytes_cnt_len)
+            b_data_len = bis.read(cls.data_bytes_cnt_len)
             data_len = int.from_bytes(b_data_len, byteorder='big')
             b_data = bis.read(data_len)
             vi.info[b_name] = b_data
         vi.update_video_info_cnt()
         return vi
 
-    @staticmethod
-    def pad(data: bytes, length: int) -> bytes:
+    @classmethod
+    def pad(cls, data: bytes, length: int) -> bytes:
         data_len = len(data)
         pad_len = length - data_len
         if pad_len <= 0:
             return data[:length]
         return pad_len * VideoInfo.PAD_DATA + data
 
-    @staticmethod
-    def unpad(data:bytes) -> bytes:
+    @classmethod
+    def unpad(cls, data:bytes) -> bytes:
         result = bytearray(b'')
         data_array = [b'%c' % i for i in data]
         for b in data_array:
-            if b == VideoInfo.PAD_DATA:
+            if b == cls.PAD_DATA:
                 continue
             result += b
         return bytes(result)
@@ -369,7 +390,7 @@ def write_encrypt_video(key: bytes,
                         input_stream: IO,
                         output_stream: IO,
                         default_block_size=BLOCK_SIZE,
-                        videowritehook: Callable = None) -> None:
+                        videowritehook: Callable[[int, int], None] = None) -> None:
     """
         写加密视频文件
 
@@ -379,6 +400,7 @@ def write_encrypt_video(key: bytes,
         :param input_stream: 原始文件的输入流
         :param output_stream: 目标文件的输出流
         :param default_block_size: 视频文件默认块字节数
+        :param videowritehook: 写入文件后调用
 
     """
 
@@ -453,6 +475,7 @@ class VideoStream:
             # 跳过信息区
             self.file_stream.seek(video_info_length, 1)
         self.index = 0
+        #TODO open中不读取数据流，在read中读取
         self._open_datablock_stream()
 
     def close(self):
@@ -492,12 +515,15 @@ class VideoStream:
         return data
 
     def seek(self, pos):
+        # TODO seek中不读取数据块，在read中读取
         for idx, block in enumerate(self.head.block_index):
-            if pos < block.raw_start_pos:
-                self.index = idx - 1
-                last_block = self.head.block_index[self.index]
-                self._open_datablock_stream()
-                self.block_stream.seek(pos - last_block.raw_start_pos)
+            if pos >= block.raw_start_pos and pos < block.raw_start_pos + block.data_size:
+                # 正好为当前数据块，不需要重新打开
+                if self.index != idx:
+                    self.index = idx
+                    self._open_datablock_stream()
+                current_block = self.head.block_index[self.index]
+                self.block_stream.seek(pos - current_block.raw_start_pos)
                 break
         return self.block_stream.tell() + self.head.block_index[self.index].raw_start_pos
 
@@ -505,6 +531,7 @@ class VideoStream:
         return self.block_stream.tell() + self.head.block_index[self.index].raw_start_pos
 
     def _open_datablock_stream(self):
+        #TODO 当前block保存为self.current_block
         block = self.head.block_index[self.index]
         enc_data = block.read_block_data(self.file_stream)
         data = decrypt_data1(self.key, block.iv, block.data_size, enc_data)
@@ -535,16 +562,13 @@ class VideoInfoReader:
         self.reader.seek(self.start)
         for video_info_index in self.video_info_index_list:
             enc_index_data = self.reader.read(video_info_index.length)
-            index_data = decrypt_data1(self.key, video_info_index.iv, enc_index_data)
+            index_data = decrypt_data1(self.key, video_info_index.iv, -1, enc_index_data)
             video_info = VideoInfo.from_bytes(index_data)
             yield video_info
 
     def close(self):
         if self.reader is not None:
             self.reader.close()
-
-
-KeyCache = []
 
 
 class SMPV(MPV):
@@ -558,7 +582,6 @@ class SMPV(MPV):
 
     def _crypto_stream_open(self, uri: str):
         result = urlparse(uri)
-
         file_path: str = result.path
         if platform.system() == 'Windows':
             if file_path.startswith('/'):
@@ -571,9 +594,9 @@ class SMPV(MPV):
             if len(values) > 0:
                 key_index = int(values[0])
 
-        key = KeyCache[key_index]
+        key = KEY_CACHE.get_cur_key()
 
-        stream = VideoStream(file_path, key)
+        stream = VideoStream(file_path, key.key)
         return stream
 
     def register_crypto_protocol(self):
