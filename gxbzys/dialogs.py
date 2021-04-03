@@ -1,6 +1,8 @@
+import threading
 from typing import Callable
 import os
 
+from PyQt5 import QtGui
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QProgressDialog, QMessageBox
 
@@ -8,20 +10,33 @@ import keymanager.dialogs as dialog
 from gxbzys.video import VideoHead, VideoInfo, write_encrypt_video, VideoStream
 from keymanager.encryptor import encrypt_data, not_encrypt_data
 
+import time
+
 
 class KeyMgrDialog(dialog.KeyMgrDialog):
 
-    def encrypt_files_action(self, item):
+    def encrypt_files_action(self):
+        item = self.get_selected_item()
         key = item.data()
         ef_dialog = EncryptFileDialog(self)
         ef_dialog.set_key(key)
         ef_dialog.exec()
 
-    def decrypt_files_action(self, item):
+    def decrypt_files_action(self):
+        item = self.get_selected_item()
         key = item.data()
-        ef_dialog = DecryptFileDialog(self)
-        ef_dialog.set_key(key)
-        ef_dialog.exec()
+        df_dialog = DecryptFileDialog(self)
+        df_dialog.set_key(key)
+        df_dialog.exec()
+
+    def active_exec(self):
+        threading.Thread(target=self._delay_activateWindow).start()
+        self.exec_()
+
+    def _delay_activateWindow(self):
+        while not self.isVisible():
+            time.sleep(0.1)
+        self.activateWindow()
 
 
 class EncryptFileDialog(dialog.EncryptFileDialog):
@@ -38,6 +53,10 @@ class EncryptFileDialog(dialog.EncryptFileDialog):
         super().__init__(parent, win_title, before_process, processor, success_msg, select_file_dlg_filter,
                          select_file_dlg_title, select_output_dir_title)
         self.label.setText('视频')
+
+    def showEvent(self, a0: QtGui.QShowEvent) -> None:
+        super().showEvent(a0)
+        self.activateWindow()
 
     def do_it(self):
         if not self.check_input():
