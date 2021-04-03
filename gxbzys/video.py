@@ -1,18 +1,12 @@
 import os
 from typing import List, Union, Dict, Iterable, Callable, Iterator
 from io import BytesIO, FileIO
-from urllib.parse import urlparse, parse_qs
-import platform
 from typing import TypeVar
 
 from typing.io import IO
 
 from keymanager.encryptor import encrypt_data1, decrypt_data1
-from gxbzys.mpv import (
-    MPV, register_protocol,
-    StreamOpenFn, StreamCloseFn, StreamReadFn, StreamSeekFn, StreamSizeFn
-)
-from keymanager.key import KEY_CACHE
+
 
 BLOCK_SIZE = 1024 * 1024
 HEAD_FILE_MARKER = b'EV00001'
@@ -569,69 +563,3 @@ class VideoInfoReader:
     def close(self):
         if self.reader is not None:
             self.reader.close()
-
-
-class SMPV(MPV):
-
-    def __init__(self, *extra_mpv_flags, log_handler=None, start_event_thread=True, loglevel=None, **extra_mpv_opts):
-        super().__init__(*extra_mpv_flags, log_handler=log_handler, start_event_thread=start_event_thread,
-                         loglevel=loglevel, **extra_mpv_opts)
-
-        self.register_crypto_protocol()
-        self.opened_streams = {}
-
-    def _crypto_stream_open(self, uri: str):
-        result = urlparse(uri)
-        file_path: str = result.path
-        if platform.system() == 'Windows':
-            if file_path.startswith('/'):
-                file_path = file_path[1:]
-
-        key_index = 0
-        query = parse_qs(result.query)
-        if 'key' in query:
-            values = query.get('key')
-            if len(values) > 0:
-                key_index = int(values[0])
-
-        key = KEY_CACHE.get_cur_key()
-
-        stream = VideoStream(file_path, key.key)
-        return stream
-
-    def register_crypto_protocol(self):
-        @StreamOpenFn
-        def _open(_userdata, uri, cb_info):
-            stream = self._crypto_stream_open(uri.decode('utf-8'))
-            stream.open()
-
-            def read(_userdata, buf, bufsize):
-                data = stream.read(bufsize)
-                for i in range(len(data)):
-                    buf[i] = data[i]
-                return len(data)
-
-            def close(_userdata):
-                stream.close()
-
-            def seek(_userdata, offset):
-                return stream.seek(offset)
-
-            def size(_userdata):
-                return stream.head.raw_file_size
-
-            cb_info.contents.cookie = None
-            _read = cb_info.contents.read = StreamReadFn(read)
-            _close = cb_info.contents.close = StreamCloseFn(close)
-            _seek = cb_info.contents.seek = StreamSeekFn(seek)
-            _size = cb_info.contents.size = StreamSizeFn(size)
-
-            stream._mpv_callbacks_ = [_read, _close, _seek, _size]
-
-            self.opened_streams[uri.decode('utf-8')] = stream
-
-            return 0
-
-        self._stream_protocol_cbs['crypto'] = [_open]
-        register_protocol(self.handle, 'crypto', _open)
-
