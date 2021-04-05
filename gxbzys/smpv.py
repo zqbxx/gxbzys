@@ -2,6 +2,7 @@ import os
 import platform
 import threading
 import time
+import typing
 from enum import Enum
 from typing import Dict, Callable
 from urllib.parse import urlparse, parse_qs
@@ -9,23 +10,51 @@ from urllib.parse import urlparse, parse_qs
 import qtawesome as qta
 from PyQt5.QtCore import QMutex, QPoint, Qt, QEvent, QObject
 from PyQt5.QtGui import QCursor
-from PyQt5.QtWidgets import QApplication, QAction, QMenu, QFileDialog
+from PyQt5.QtWidgets import QApplication, QAction, QMenu, QFileDialog, QMessageBox
 
 from gxbzys.dialogs import KeyMgrDialog
 
+from gxbzys import mpv
 from gxbzys.mpv import MPV, StreamOpenFn, StreamReadFn, StreamCloseFn, StreamSeekFn, StreamSizeFn, register_protocol
 from gxbzys.video import VideoStream
 from keymanager.key import KEY_CACHE
 
+class EmptyStream:
+
+    def read(self, length):
+        return ''
+
+    def seek(self, pos):
+        return 0
+
+    def tell(self):
+        return 0
+
+    def close(self):
+        pass
+
+    def open(self):
+        pass
+
 
 class SMPV(MPV):
 
-    def __init__(self, *extra_mpv_flags, log_handler=None, start_event_thread=True, loglevel=None, **extra_mpv_opts):
+    def __init__(self,
+                 event_object: QObject = None,
+                 *extra_mpv_flags,
+                 log_handler=None,
+                 start_event_thread=True,
+                 loglevel=None,
+                 **extra_mpv_opts):
         super().__init__(*extra_mpv_flags, log_handler=log_handler, start_event_thread=start_event_thread,
                          loglevel=loglevel, **extra_mpv_opts)
 
         self.register_crypto_protocol()
         self.opened_streams = {}
+        self.event_object: QObject = event_object
+
+    def load_config(self, path: str):
+        mpv._mpv_load_config_file(self.handle, path.encode('utf-8'))
 
     def _crypto_stream_open(self, uri: str):
         result = urlparse(uri)
@@ -34,14 +63,21 @@ class SMPV(MPV):
             if file_path.startswith('/'):
                 file_path = file_path[1:]
 
-        key_index = 0
-        query = parse_qs(result.query)
-        if 'key' in query:
-            values = query.get('key')
-            if len(values) > 0:
-                key_index = int(values[0])
-
         key = KEY_CACHE.get_cur_key()
+
+        if key is None:
+            if self.event_object is not None:
+                event = MpvCryptoEvent(CryptoType.nokey, MpvEventType.MpvCryptoEventType.value)
+                QApplication.instance().postEvent(self.event_object, event)
+            self.stream_open_filename = ''
+            return EmptyStream()
+
+        if key.timeout:
+            if self.event_object is not None:
+                event = MpvCryptoEvent(CryptoType.timeout, MpvEventType.MpvCryptoEventType.value)
+                QApplication.instance().postEvent(self.event_object, event)
+            self.stream_open_filename = ''
+            return EmptyStream()
 
         stream = VideoStream(file_path, key.key)
         return stream
@@ -87,6 +123,20 @@ class MpvEventType(Enum):
     MpvContextMenuEventType = QEvent.Type(QEvent.registerEventType())
     MpvShutdownEventType = QEvent.Type(QEvent.registerEventType())
     MpvOpenDialogEventType = QEvent.Type(QEvent.registerEventType())
+
+    MpvCryptoEventType = QEvent.Type(QEvent.registerEventType())
+
+
+class CryptoType(Enum):
+    timeout = 0
+    nokey = 1
+
+
+class MpvCryptoEvent(QEvent):
+
+    def __init__(self, crypto_type: CryptoType, type: QEvent.Type) -> None:
+        super().__init__(type)
+        self.crypto_type = crypto_type
 
 
 class SMPVPlayer(QObject):
@@ -134,6 +184,17 @@ class SMPVPlayer(QObject):
             self.app.exit(0)
             return True
 
+        elif event.type() == MpvEventType.MpvCryptoEventType.value:
+            e: MpvCryptoEvent = event
+            if e.crypto_type == CryptoType.nokey:
+                msg = '没有加载默认的密钥'
+            elif e.crypto_type == CryptoType.timeout:
+                msg = '默认密钥已经超时，需重新加载'
+            else:
+                msg = '未知错误:' + str(e.crypto_type)
+            QMessageBox.critical(None, '错误', msg)
+            return True
+
         return super().event(event)
 
     def _run(self):
@@ -170,22 +231,23 @@ class SMPVPlayer(QObject):
         return pop_menu
 
     def _create_player(self):
-        print(os.path.abspath('./config'))
-        player = SMPV(ytdl=True,
-                      player_operation_mode='pseudo-gui',
-                      autofit='70%',
-                      # script_opts='osc-layout=bottombar,osc-seekbarstyle=bar,osc-deadzonesize=0,osc-minmousemove=3',
-                      input_default_bindings=True,
-                      input_vo_keyboard=True,
-                      log_handler=print,
-                      loglevel='info',
-                      config_dir='./config',
-                      input_conf="./config/input.conf",
-                      border=False,
-                      osd_bar=False,
-                      osc=False)
-        player.command('load-script', os.path.abspath('./config/scripts/crypto.lua'))
-        player.command('load-script', os.path.abspath('./config/scripts/uosc.lua'))
+
+        player = SMPV(
+            event_object=self,
+            ytdl=True,
+            player_operation_mode='pseudo-gui',
+            autofit='70%',
+            # script_opts='osc-layout=bottombar,osc-seekbarstyle=bar,osc-deadzonesize=0,osc-minmousemove=3',
+            input_default_bindings=True,
+            input_vo_keyboard=True,
+            log_handler=print,
+            loglevel='debug',
+            config_dir='./config',
+            config='yes',
+            border=False,
+            osd_bar=False,
+            osc=False)
+
         return player
 
     def _install_key_bindings(self):
