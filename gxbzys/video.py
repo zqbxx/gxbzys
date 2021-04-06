@@ -1,5 +1,5 @@
 import os
-from typing import List, Union, Dict, Iterable, Callable, Iterator
+from typing import List, Union, Dict, Callable
 from io import BytesIO, FileIO
 from typing import TypeVar
 
@@ -10,20 +10,7 @@ from keymanager.encryptor import encrypt_data1, decrypt_data1
 
 BLOCK_SIZE = 1024 * 1024
 HEAD_FILE_MARKER = b'EV00001'
-
-HEAD_FILE_MARKER_LEN = 7
-HEAD_BLOCK_SIZE_LEN = 3
-HEAD_RAW_FILE_LEN = 5
-HEAD_HEAD_PART_LEN = 4
-HEAD_IV_LEN = 16
-
-HEAD_VIDEO_INFO_INDEX_LEN = 5
-
-HEAD_VIDEO_CONTENT_BLOCK_LEN = \
-    HEAD_IV_LEN + HEAD_RAW_FILE_LEN * 2 + HEAD_BLOCK_SIZE_LEN * 2
-
 EMPTY_IV = b'\0' * 16
-
 
 VideoContentIndexType = TypeVar("VideoContentIndexType", bound="VideoContentIndex")
 VideoHeadType = TypeVar("VideoHeadType", bound="VideoHead")
@@ -36,6 +23,14 @@ class VideoContentIndex:
     raw_start_pos_bytes_len = 5  #: 数据块在原始文件中起始位置的数值占用的字节长度
     data_bytes_cnt_len = 3  #：未加密的数据块大小的数值占用的字节长度
     block_bytes_cnt_len = 3  #：加密以后的数据块大小的数值占用的字节长度
+
+    video_content_index_bytes = (
+            iv_len +  # 7
+            start_pos_bytes_len +  # 5
+            raw_start_pos_bytes_len +  # 5
+            data_bytes_cnt_len +  # 3
+            block_bytes_cnt_len  # 3
+    )
 
     """
     加密视频文件块索引，保存在VideoHead中
@@ -102,6 +97,14 @@ class VideoContentIndex:
 
 
 class VideoHead:
+
+    #TODO 加入加密文件长度字段
+    video_marker_bytes_cnt = 7  #: 文件标记占用的字节数
+    video_head_size_bytes_cnt_len = 4  #: 文件头字节数量的数值所占用的字节数
+    video_raw_file_size_bytes_cnt_len = 5  #: 原始文件头字节数量的数值所占用的字节数
+    video_info_index_bytes_cnt_len = 5  #: 视频信息索引字节数量的数值所占用的字节数
+    video_info_index_cnt_bytes_len = 2  #: 视频信息索引数量的字节数量的数值所占用的字节数
+
     """
     加密视频文件文件头
     """
@@ -115,16 +118,21 @@ class VideoHead:
 
     def update_head_size(self):
         """更新文件头数据"""
-        self.head_size = 0
+
+        # 计算数据长度
         self.video_info_index_cnt = len(self.video_info_index)
         self.video_info_index_size = self.video_info_index_cnt * VideoInfoIndex.video_info_index_len
-        self.head_size += HEAD_FILE_MARKER_LEN
-        self.head_size += HEAD_HEAD_PART_LEN  # head_size
-        self.head_size += HEAD_RAW_FILE_LEN  # raw_file_size
-        self.head_size += HEAD_VIDEO_INFO_INDEX_LEN
-        self.head_size += 2  # video_info_index_cnt
+
+        # 重置size，再开始计算
+        self.head_size = 0
+
+        self.head_size += self.video_marker_bytes_cnt  #  marker, 7
+        self.head_size += self.video_head_size_bytes_cnt_len  # head_size, 4
+        self.head_size += self.video_raw_file_size_bytes_cnt_len  # raw_file_size, 5
+        self.head_size += self.video_info_index_bytes_cnt_len  # video_info_index_size, 5
+        self.head_size += self.video_info_index_cnt_bytes_len  # video_info_index_cnt, 2
         self.head_size += self.video_info_index_size  # video_info_index_size
-        self.head_size += len(self.block_index) * HEAD_VIDEO_CONTENT_BLOCK_LEN  # block_index
+        self.head_size += len(self.block_index) * VideoContentIndex.video_content_index_bytes  # block_index
 
     def to_bytes(self) -> bytes:
 
@@ -132,10 +140,10 @@ class VideoHead:
 
         bos = BytesIO()
         bos.write(HEAD_FILE_MARKER)  # 7
-        bos.write(self.head_size.to_bytes(HEAD_HEAD_PART_LEN, byteorder='big'))  # 4
-        bos.write(self.raw_file_size.to_bytes(HEAD_RAW_FILE_LEN, byteorder='big'))  # 5
-        bos.write(self.video_info_index_size.to_bytes(HEAD_VIDEO_INFO_INDEX_LEN, byteorder='big')) # 5
-        bos.write(self.video_info_index_cnt.to_bytes(2, byteorder='big'))
+        bos.write(self.head_size.to_bytes(self.video_head_size_bytes_cnt_len, byteorder='big'))  # 4
+        bos.write(self.raw_file_size.to_bytes(self.video_raw_file_size_bytes_cnt_len, byteorder='big'))  # 5
+        bos.write(self.video_info_index_size.to_bytes(self.video_info_index_bytes_cnt_len, byteorder='big'))  # 5
+        bos.write(self.video_info_index_cnt.to_bytes(self.video_info_index_cnt_bytes_len, byteorder='big'))  # 2
 
         for info_index in self.video_info_index:
             bos.write(info_index.to_bytes())
@@ -154,7 +162,7 @@ class VideoHead:
             close = True
         if isinstance(f, IO):
             stream = f
-        b_marker = stream.read(HEAD_FILE_MARKER_LEN)
+        b_marker = stream.read(cls.video_marker_bytes_cnt)
         if close:
             stream.close()
         return b_marker.hex() == HEAD_FILE_MARKER.hex()
@@ -167,20 +175,20 @@ class VideoHead:
         :return 包含文件头数据的`bytes`对象
 
         """
-        reader.seek(HEAD_FILE_MARKER_LEN)
-        head_size = int.from_bytes(reader.read(HEAD_HEAD_PART_LEN), byteorder='big')
+        reader.seek(cls.video_marker_bytes_cnt)  # 7
+        head_size = int.from_bytes(reader.read(cls.video_head_size_bytes_cnt_len), byteorder='big')
         reader.seek(0)
         return reader.read(head_size)
 
     @classmethod
     def from_bytes(cls, data) -> VideoHeadType:
         bis = BytesIO(data)
-        bis.seek(HEAD_FILE_MARKER_LEN)
+        bis.seek(cls.video_marker_bytes_cnt)  # 7
         vh = VideoHead()
-        vh.head_size = int.from_bytes(bis.read(HEAD_HEAD_PART_LEN), byteorder='big')
-        vh.raw_file_size = int.from_bytes(bis.read(HEAD_RAW_FILE_LEN), byteorder='big')
-        vh.video_info_index_size = int.from_bytes(bis.read(HEAD_VIDEO_INFO_INDEX_LEN), byteorder='big')
-        vh.video_info_index_cnt = int.from_bytes(bis.read(2), byteorder='big')
+        vh.head_size = int.from_bytes(bis.read(cls.video_head_size_bytes_cnt_len), byteorder='big')  # 4
+        vh.raw_file_size = int.from_bytes(bis.read(cls.video_raw_file_size_bytes_cnt_len), byteorder='big')  # 5
+        vh.video_info_index_size = int.from_bytes(bis.read(cls.video_info_index_bytes_cnt_len), byteorder='big')  # 5
+        vh.video_info_index_cnt = int.from_bytes(bis.read(cls.video_info_index_cnt_bytes_len), byteorder='big')  # 2
         
         if vh.video_info_index_size > 0:
             for i in range(vh.video_info_index_cnt):
@@ -188,12 +196,18 @@ class VideoHead:
                 info_index = VideoInfoIndex.from_bytes(index_data)
                 vh.video_info_index.append(info_index)
 
-        block_index_size = vh.head_size - (HEAD_FILE_MARKER_LEN + HEAD_HEAD_PART_LEN + HEAD_RAW_FILE_LEN + HEAD_VIDEO_INFO_INDEX_LEN + 2 + vh.video_info_index_size)
-        if block_index_size % HEAD_VIDEO_CONTENT_BLOCK_LEN != 0:
+        block_index_size = vh.head_size - (
+                cls.video_marker_bytes_cnt +  # 7
+                cls.video_head_size_bytes_cnt_len +  # 4
+                cls.video_raw_file_size_bytes_cnt_len +  # 5
+                cls.video_info_index_bytes_cnt_len +  # 5
+                cls.video_info_index_cnt_bytes_len +  # 2
+                vh.video_info_index_size)
+        if block_index_size % VideoContentIndex.video_content_index_bytes != 0:
             raise Exception('head size incorrect', vh)
-        block_num = int(block_index_size / HEAD_VIDEO_CONTENT_BLOCK_LEN)
+        block_num = int(block_index_size / VideoContentIndex.video_content_index_bytes)
         for idx in range(block_num):
-            block_data = bis.read(HEAD_VIDEO_CONTENT_BLOCK_LEN)
+            block_data = bis.read(VideoContentIndex.video_content_index_bytes)
             vbi = VideoContentIndex.from_bytes(block_data)
             vh.block_index.append(vbi)
         return vh
@@ -258,7 +272,7 @@ class VideoInfo:
 
     head_all_info_bytes_cnt_len = 2  # 所有信息数量的数值占用的字节数
 
-    data_bytes_cnt_len = HEAD_BLOCK_SIZE_LEN  # 信息数据长度的数值占用的字节数
+    data_bytes_cnt_len = 3  # 信息数据长度的数值占用的字节数
     name_max_length = 1024  # 信息名字最大长度
     data_max_len = pow(2, 3 * 8) - 1  # 信息数据的最大长度
 
