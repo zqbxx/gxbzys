@@ -9,7 +9,7 @@ from keymanager.encryptor import encrypt_data1, decrypt_data1
 
 
 BLOCK_SIZE = 1024 * 1024
-HEAD_FILE_MARKER = b'EV00001'
+HEAD_FILE_MARKER = b'EV000001'
 EMPTY_IV = b'\0' * 16
 
 VideoContentIndexType = TypeVar("VideoContentIndexType", bound="VideoContentIndex")
@@ -99,7 +99,8 @@ class VideoContentIndex:
 class VideoHead:
 
     #TODO 加入加密文件长度字段
-    video_marker_bytes_cnt = 7  #: 文件标记占用的字节数
+    video_marker_bytes_cnt = len(HEAD_FILE_MARKER)  #: 文件标记占用的字节数
+    video_file_size_bytes_cnt_len = 5  #: 包括文件标记在内的加密文件字节数量的数值所占用的字节数
     video_head_size_bytes_cnt_len = 4  #: 文件头字节数量的数值所占用的字节数
     video_raw_file_size_bytes_cnt_len = 5  #: 原始文件头字节数量的数值所占用的字节数
     video_info_index_bytes_cnt_len = 5  #: 视频信息索引字节数量的数值所占用的字节数
@@ -109,6 +110,7 @@ class VideoHead:
     加密视频文件文件头
     """
     def __init__(self):
+        self.file_size = 0  #: 包括文件标记在内的加密文件的大小
         self.head_size = 0  #: 文件头字节数，包含文件头中所有数据，包括head_size变量本身
         self.raw_file_size = 0  #: 未加密的文件字节数
         self.video_info_index_size = 0  #: 视频信息块索引占用字节数
@@ -126,7 +128,8 @@ class VideoHead:
         # 重置size，再开始计算
         self.head_size = 0
 
-        self.head_size += self.video_marker_bytes_cnt  #  marker, 7
+        self.head_size += self.video_marker_bytes_cnt  #  marker, 8
+        self.head_size += self.video_file_size_bytes_cnt_len  # file_size 5
         self.head_size += self.video_head_size_bytes_cnt_len  # head_size, 4
         self.head_size += self.video_raw_file_size_bytes_cnt_len  # raw_file_size, 5
         self.head_size += self.video_info_index_bytes_cnt_len  # video_info_index_size, 5
@@ -139,14 +142,15 @@ class VideoHead:
         self.update_head_size()
 
         bos = BytesIO()
-        bos.write(HEAD_FILE_MARKER)  # 7
+        bos.write(HEAD_FILE_MARKER)  # 8
+        bos.write(self.file_size.to_bytes(self.video_file_size_bytes_cnt_len, byteorder='big'))  # 5
         bos.write(self.head_size.to_bytes(self.video_head_size_bytes_cnt_len, byteorder='big'))  # 4
         bos.write(self.raw_file_size.to_bytes(self.video_raw_file_size_bytes_cnt_len, byteorder='big'))  # 5
         bos.write(self.video_info_index_size.to_bytes(self.video_info_index_bytes_cnt_len, byteorder='big'))  # 5
         bos.write(self.video_info_index_cnt.to_bytes(self.video_info_index_cnt_bytes_len, byteorder='big'))  # 2
 
         for info_index in self.video_info_index:
-            bos.write(info_index.to_bytes())
+            bos.write(info_index.to_bytes())  # 20
 
         for vbi in self.block_index:
             bos.write(vbi.to_bytes())  # 32
@@ -175,7 +179,7 @@ class VideoHead:
         :return 包含文件头数据的`bytes`对象
 
         """
-        reader.seek(cls.video_marker_bytes_cnt)  # 7
+        reader.seek(cls.video_marker_bytes_cnt + cls.video_file_size_bytes_cnt_len)  # 8 + 5
         head_size = int.from_bytes(reader.read(cls.video_head_size_bytes_cnt_len), byteorder='big')
         reader.seek(0)
         return reader.read(head_size)
@@ -183,8 +187,9 @@ class VideoHead:
     @classmethod
     def from_bytes(cls, data) -> VideoHeadType:
         bis = BytesIO(data)
-        bis.seek(cls.video_marker_bytes_cnt)  # 7
+        bis.seek(cls.video_marker_bytes_cnt)  # 8
         vh = VideoHead()
+        vh.file_size = int.from_bytes(bis.read(cls.video_file_size_bytes_cnt_len), byteorder='big')  # 5
         vh.head_size = int.from_bytes(bis.read(cls.video_head_size_bytes_cnt_len), byteorder='big')  # 4
         vh.raw_file_size = int.from_bytes(bis.read(cls.video_raw_file_size_bytes_cnt_len), byteorder='big')  # 5
         vh.video_info_index_size = int.from_bytes(bis.read(cls.video_info_index_bytes_cnt_len), byteorder='big')  # 5
@@ -198,6 +203,7 @@ class VideoHead:
 
         block_index_size = vh.head_size - (
                 cls.video_marker_bytes_cnt +  # 7
+                cls.video_file_size_bytes_cnt_len +  # 5
                 cls.video_head_size_bytes_cnt_len +  # 4
                 cls.video_raw_file_size_bytes_cnt_len +  # 5
                 cls.video_info_index_bytes_cnt_len +  # 5
@@ -282,7 +288,7 @@ class VideoInfo:
         self.video_info_cnt = 0
         self.info: Dict[bytes, Union[bytes, BytesIO, FileIO]] = {}
 
-    def add_info(self, info_name: bytes, info_data: bytes):
+    def add_info(self, info_name: bytes, info_data: Union[bytes, BytesIO, FileIO]):
         if len(info_name) > VideoInfo.name_max_length:
             raise VideoInfoException(f'name too long, name should < {VideoInfo.name_max_length}')
         self.info[info_name] = info_data
@@ -446,6 +452,8 @@ def write_encrypt_video(key: bytes,
         output_stream.write(enc_data)
         if videowritehook is not None:
             videowritehook(i, len(block_index))
+
+    head.file_size = output_stream.tell()
 
     # 头信息更新，重新写入
     output_stream.seek(0)

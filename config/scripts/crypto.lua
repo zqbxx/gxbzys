@@ -6,11 +6,11 @@ local function on_start()
     msg.log("info", "open file: " .. streamOpenFN)
     local file = io.open(streamOpenFN,"rb")
     if not file then return nil end
-    local block = file:read(7)
+    local block = file:read(8)
     file:close()
-    if (block == 'EV00001')
+    if (block == 'EV000001')
     then
-        msg.log("info", "crypto marker: EV00001")
+        msg.log("info", "crypto marker: EV000001")
         mp.set_property(
             "stream-open-filename",
             "crypto:///" .. streamOpenFN

@@ -84,6 +84,8 @@ class TestWrite_encrypt_video(TestCase):
         print('output file size: ', os.path.getsize(output_file))
         print('input file size: ', os.path.getsize(input_file))
 
+        assert head.file_size == os.path.getsize(output_file)
+
         reader = open(output_file, 'rb')
         head_bytes = VideoHead.get_head_block(reader)
         new_head: VideoHead = VideoHead.from_bytes(head_bytes)
@@ -91,6 +93,7 @@ class TestWrite_encrypt_video(TestCase):
         assert head.head_size == new_head.head_size
         assert head.raw_file_size == new_head.raw_file_size
         assert head.video_info_index_size == new_head.video_info_index_size
+        assert head.file_size == new_head.file_size
 
         for i, video_info in enumerate(head.video_info_index):
             print(f'video info {i} length: {new_head.video_info_index[i].length}')
@@ -99,6 +102,7 @@ class TestWrite_encrypt_video(TestCase):
 
         all_block_len = 0
         for i in range(len(head.block_index)):
+            print(f'check block {i}')
             b1 = head.block_index[i]
             b2 = new_head.block_index[i]
             assert b1.data_size == b2.data_size
