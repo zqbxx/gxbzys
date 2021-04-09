@@ -1670,7 +1670,7 @@ function render_top_bar(this)
 		if maximize.proximity_raw == 0 then
 			-- Background on hover
 			ass:new_event()
-			ass:append('{\\blur0\\bord0\\1c&H222222}')
+			ass:append('{\\blur0\\bord0\\1c&HFFBF14}')
 			ass:append(ass_opacity(this.button_opacity, opacity))
 			ass:pos(0, 0)
 			ass:draw_start()
@@ -1697,7 +1697,7 @@ function render_top_bar(this)
 		if minimize.proximity_raw == 0 then
 			-- Background on hover
 			ass:new_event()
-			ass:append('{\\blur0\\bord0\\1c&H222222}')
+			ass:append('{\\blur0\\bord0\\1c&HFFBF14}')
 			ass:append(ass_opacity(this.button_opacity, opacity))
 			ass:pos(0, 0)
 			ass:draw_start()
@@ -1713,6 +1713,46 @@ function render_top_bar(this)
 		ass:move_to(-this.icon_size, 0)
 		ass:line_to(this.icon_size, 0)
 		ass:draw_stop()
+
+		local contextmenu = elements.window_controls_contextmenu
+		if contextmenu.proximity_raw == 0 then
+			-- Background on hover
+			ass:new_event()
+			ass:append('{\\blur0\\bord0\\1c&HFFBF14}')
+			ass:append(ass_opacity(this.button_opacity, opacity))
+			ass:pos(0, 0)
+			ass:draw_start()
+			ass:rect_cw(contextmenu.ax, contextmenu.ay, contextmenu.bx, contextmenu.by)
+			ass:draw_stop()
+		end
+		ass:new_event()
+		ass:pos(contextmenu.ax + (this.button_width / 4) + 1, contextmenu.ay + (this.size / 4))
+		ass:append('{\\blur0\\bord1\\shad1\\3c&HFFFFFF\\4c&H000000\\fnbootstrap-icons\\fs16}')
+		ass:append(ass_opacity(this.button_opacity, opacity))
+		ass:append('{\\1a&HFF&}') -- caret-down-fill F229 335
+
+		local ontop = elements.window_controls_ontop
+		local isOnTop = mp.get_property_native("ontop")
+		if ontop.proximity_raw == 0 then
+			-- Background on hover
+			ass:new_event()
+			ass:append('{\\blur0\\bord0\\1c&HFFBF14}')
+			ass:append(ass_opacity(this.button_opacity, opacity))
+			ass:pos(0, 0)
+			ass:draw_start()
+			ass:rect_cw(ontop.ax, ontop.ay, ontop.bx, ontop.by)
+			ass:draw_stop()
+		end
+		ass:new_event()
+		ass:pos(ontop.ax + (this.button_width / 4) + 1, ontop.ay + (this.size / 4))
+		ass:append('{\\blur0\\bord1\\shad1\\3c&HFFFFFF\\4c&H000000\\fnbootstrap-icons\\fs16}')
+		ass:append(ass_opacity(this.button_opacity, opacity))
+		if isOnTop then
+			ass:append('{\\1a&HFF&}') -- lock-fill F47A 927
+		else
+			ass:append('{\\1a&HFF&}') -- unlock F600 1314
+		end
+
 	end
 
 	-- Window title
@@ -2328,7 +2368,7 @@ elements:add('top_bar', Element.new({
 		this.ay = elements.window_border.size
 		this.bx = display.width - elements.window_border.size
 		this.by = this.size + elements.window_border.size
-		this.title_bx = this.bx - (options.top_bar_controls and (this.button_width * 3) or 0)
+		this.title_bx = this.bx - (options.top_bar_controls and (this.button_width * 4) or 0)
 		this.ax = options.top_bar_title and elements.window_border.size or this.title_bx
 	end,
 	on_prop_border = function(this, value)
@@ -2339,6 +2379,28 @@ elements:add('top_bar', Element.new({
 	render = render_top_bar,
 }))
 if options.top_bar_controls then
+	elements:add('window_controls_ontop', Element.new({
+		update_dimensions = function(this)
+			this.ax = elements.top_bar.bx - (elements.top_bar.button_width * 5)
+			this.ay = elements.top_bar.ay
+			this.bx = this.ax + elements.top_bar.button_width
+			this.by = this.ay + elements.top_bar.size
+		end,
+		on_prop_border = function(this) this:update_dimensions() end,
+		on_display_change = function(this) this:update_dimensions() end,
+		on_mbtn_left_down = function() mp.set_property_native("ontop", not mp.get_property_native("ontop")) end
+	}))
+	elements:add('window_controls_contextmenu', Element.new({
+		update_dimensions = function(this)
+			this.ax = elements.top_bar.bx - (elements.top_bar.button_width * 4)
+			this.ay = elements.top_bar.ay
+			this.bx = this.ax + elements.top_bar.button_width
+			this.by = this.ay + elements.top_bar.size
+		end,
+		on_prop_border = function(this) this:update_dimensions() end,
+		on_display_change = function(this) this:update_dimensions() end,
+		on_mbtn_left_down = function() mp.commandv('script-message', 'show-menu') end
+	}))
 	elements:add('window_controls_minimize', Element.new({
 		update_dimensions = function(this)
 			this.ax = elements.top_bar.bx - (elements.top_bar.button_width * 3)
@@ -2682,8 +2744,7 @@ end
 -- CONTEXT MENU SERIALIZATION
 
 state.context_menu_items = (function()
-	--local input_conf_path = mp.command_native({'expand-path', '~~/input.conf'})
-    local input_conf_path = './config/input.conf'
+	local input_conf_path = mp.command_native({'expand-path', '~~/input.conf'})
 	local input_conf_meta, meta_error = utils.file_info(input_conf_path)
 
 	-- File doesn't exist

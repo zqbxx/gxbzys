@@ -18,6 +18,8 @@ from gxbzys import mpv
 from gxbzys.mpv import MPV, StreamOpenFn, StreamReadFn, StreamCloseFn, StreamSeekFn, StreamSizeFn, register_protocol
 from gxbzys.video import VideoStream
 from keymanager.key import KEY_CACHE
+from keymanager.utils import ICON_COLOR
+
 
 class EmptyStream:
 
@@ -110,7 +112,7 @@ class SMPV(MPV):
             _size = cb_info.contents.size = StreamSizeFn(size)
 
             stream._mpv_callbacks_ = [_read, _close, _seek, _size]
-
+            # TODO 流关闭时移除opened_streams的value
             self.opened_streams[uri.decode('utf-8')] = stream
 
             return 0
@@ -212,14 +214,31 @@ class SMPVPlayer(QObject):
     def _build_menu_actions(self):
         open_local_file_act: MenuAction = MenuAction(
             name='open_local_file_act',
-            action=QAction(qta.icon('ei.file-new', color='#8a949a', color_active='black'), '打开文件'),
+            action=QAction(qta.icon('ei.file-new',
+                                    color=ICON_COLOR['color'],
+                                    color_active=ICON_COLOR['active']),
+                           '打开文件'),
             func=self._open_local_file)
+
+        add_local_file_act: MenuAction = MenuAction(
+            name='add_local_file_act',
+            action=QAction(qta.icon('mdi.playlist-plus',
+                                    color=ICON_COLOR['color'],
+                                    color_active=ICON_COLOR['active']),
+                           '添加文件'),
+            func=self._add_local_file_act)
+
         open_key_mgr_act: MenuAction = MenuAction(
             name='open_key_mgr_act',
-            action=QAction(qta.icon('fa5s.key', color='#8a949a', color_active='black'), '密钥管理'),
+            action=QAction(qta.icon('fa5s.key',
+                                    color=ICON_COLOR['color'],
+                                    color_active=ICON_COLOR['active']),
+                           '密钥管理'),
             func=self.key_mgr_dialog.active_exec)
+
         return {
             open_local_file_act.name: open_local_file_act,
+            add_local_file_act.name: add_local_file_act,
             open_key_mgr_act.name: open_key_mgr_act
         }
 
@@ -227,6 +246,7 @@ class SMPVPlayer(QObject):
         pop_menu = QMenu()
         pop_menu.setContextMenuPolicy(Qt.CustomContextMenu)
         pop_menu.addAction(self.menu_actions['open_local_file_act'].action)
+        pop_menu.addAction(self.menu_actions['add_local_file_act'].action)
         pop_menu.addAction(self.menu_actions['open_key_mgr_act'].action)
         return pop_menu
 
@@ -237,16 +257,21 @@ class SMPVPlayer(QObject):
             ytdl=True,
             player_operation_mode='pseudo-gui',
             autofit='70%',
-            # script_opts='osc-layout=bottombar,osc-seekbarstyle=bar,osc-deadzonesize=0,osc-minmousemove=3',
+            #script_opts='osc-layout=bottombar,osc-seekbarstyle=bar,osc-deadzonesize=0,osc-minmousemove=3',
             input_default_bindings=True,
             input_vo_keyboard=True,
             log_handler=print,
-            loglevel='debug',
+            loglevel='info',
             config_dir='./config',
             config='yes',
             border=False,
             osd_bar=False,
             osc=False)
+
+        @player.message_handler('show-menu')
+        def my_handler(*args):
+            event = QEvent(MpvEventType.MpvContextMenuEventType.value)
+            QApplication.instance().postEvent(self, event)
 
         return player
 
@@ -276,9 +301,22 @@ class SMPVPlayer(QObject):
         )
         print(ok)
         if len(file_list) > 0:
+            self.player.playlist_clear()
             for f in file_list:
                 self.player.playlist_append(f)
             self.player.playlist_pos = 0
+
+    def _add_local_file_act(self):
+        file_list, ok = QFileDialog.getOpenFileNames(
+            parent=self.key_mgr_dialog,
+            caption="Open file",
+            directory="",
+            filter="mkv Video (*.mkv);;mp4 Video (*.mp4);;Movie files (*.mov);;All files (*.*)",
+        )
+        print(ok)
+        if len(file_list) > 0:
+            for f in file_list:
+                self.player.playlist_append(f)
 
     def _open_key_mgr(self):
         self.key_mgr_dialog.active_exec()

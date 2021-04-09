@@ -1,4 +1,7 @@
 import sys
+import os
+os.environ["PATH"] += os.pathsep + '.'
+
 
 from PyQt5.QtCore import QThread, pyqtSignal, Qt
 from PyQt5.QtGui import QPalette, QColor
@@ -8,7 +11,11 @@ from PyQt5.QtWidgets import QApplication
 from gxbzys.smpv import SMPVPlayer
 from keymanager import utils as kmutils
 
-if __name__ == "__main__":
+
+def main():
+
+    import locale
+    locale.setlocale(locale.LC_NUMERIC, 'C')
 
     kmutils.ICON_COLOR['color'] = '#8a949a'
     kmutils.ICON_COLOR['active'] = 'black'
@@ -16,9 +23,7 @@ if __name__ == "__main__":
     app = QApplication([])
     app.setApplicationName("播放器")
     QApplication.setQuitOnLastWindowClosed(False)
-
     app.setStyle("Fusion")
-
     # Fusion dark palette from https://gist.github.com/QuantumCD/6245215.
     palette = QPalette()
     palette.setColor(QPalette.Window, QColor(53, 53, 53))
@@ -45,9 +50,20 @@ if __name__ == "__main__":
         QListView::item:selected{
             background-color:#cccccc;
         }
+        
+        QMenu::item:selected{
+             background-color:#1099cc;
+        }
+        QListView::item:selected{
+            background-color:#1099cc;
+        }
         '''
     )
     smpv_player = SMPVPlayer()
     smpv_player.start()
-
     sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+
+    main()
