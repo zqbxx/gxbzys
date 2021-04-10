@@ -7,7 +7,7 @@ from PySide2.QtCore import Qt
 from PySide2.QtGui import QPalette, QColor
 from PySide2.QtWidgets import QApplication
 os.environ['QT_API'] = 'PySide2'
-
+from keymanager import iconic
 
 from gxbzys.smpv import SMPVPlayer
 from keymanager import utils as kmutils
