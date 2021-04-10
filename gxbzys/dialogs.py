@@ -2,9 +2,9 @@ import threading
 from typing import Callable
 import os
 
-from PyQt5 import QtGui
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QProgressDialog, QMessageBox
+from PySide2 import QtGui
+from PySide2.QtCore import Qt
+from PySide2.QtWidgets import QProgressDialog, QMessageBox
 
 import keymanager.dialogs as dialog
 from gxbzys.video import VideoHead, VideoInfo, write_encrypt_video, VideoStream
@@ -20,14 +20,14 @@ class KeyMgrDialog(dialog.KeyMgrDialog):
         key = item.data()
         ef_dialog = EncryptFileDialog(self)
         ef_dialog.set_key(key)
-        ef_dialog.exec()
+        ef_dialog.exec_()
 
     def decrypt_files_action(self):
         item = self.get_selected_item()
         key = item.data()
         df_dialog = DecryptFileDialog(self)
         df_dialog.set_key(key)
-        df_dialog.exec()
+        df_dialog.exec_()
 
     def active_exec(self):
         threading.Thread(target=self._delay_activateWindow).start()
@@ -108,7 +108,6 @@ class EncryptFileDialog(dialog.EncryptFileDialog):
             else:
                 QMessageBox.information(pd, '已经终止', '用户取消')
         except Exception as e:
-            pass
             QMessageBox.critical(pd, '处理失败', str(e))
         pd.close()
         self.close()

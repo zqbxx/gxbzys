@@ -8,9 +8,9 @@ from typing import Dict, Callable
 from urllib.parse import urlparse, parse_qs
 
 import qtawesome as qta
-from PyQt5.QtCore import QMutex, QPoint, Qt, QEvent, QObject
-from PyQt5.QtGui import QCursor
-from PyQt5.QtWidgets import QApplication, QAction, QMenu, QFileDialog, QMessageBox
+from PySide2.QtCore import QMutex, QPoint, Qt, QEvent, QObject
+from PySide2.QtGui import QCursor
+from PySide2.QtWidgets import QApplication, QAction, QMenu, QFileDialog, QMessageBox
 
 from gxbzys.dialogs import KeyMgrDialog
 
@@ -287,7 +287,7 @@ class SMPVPlayer(QObject):
             QApplication.instance().postEvent(self, event)
 
     def _show_menu(self):
-        selected_action = self.pop_menu.exec(QCursor.pos())
+        selected_action = self.pop_menu.exec_(QCursor.pos())
         for name, menu_action in self.menu_actions.items():
             if menu_action.action == selected_action:
                 menu_action.func()

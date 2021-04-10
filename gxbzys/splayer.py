@@ -3,9 +3,10 @@ import os
 os.environ["PATH"] += os.pathsep + '.'
 
 
-from PyQt5.QtCore import QThread, pyqtSignal, Qt
-from PyQt5.QtGui import QPalette, QColor
-from PyQt5.QtWidgets import QApplication
+from PySide2.QtCore import Qt
+from PySide2.QtGui import QPalette, QColor
+from PySide2.QtWidgets import QApplication
+os.environ['QT_API'] = 'PySide2'
 
 
 from gxbzys.smpv import SMPVPlayer
@@ -61,7 +62,7 @@ def main():
     )
     smpv_player = SMPVPlayer()
     smpv_player.start()
-    sys.exit(app.exec())
+    sys.exit(app.exec_())
 
 
 if __name__ == "__main__":
