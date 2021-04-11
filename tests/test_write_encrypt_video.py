@@ -148,6 +148,8 @@ class TestWrite_encrypt_video(TestCase):
         seek(stream, reader, 3000)
 
         read_and_assert(stream, reader, 3000)
+        seek(stream, reader, 24000)
+        read_and_assert(stream, reader, 30000)
 
         video_info_reader = stream.video_info_reader
         video_info_reader.open()
@@ -179,6 +181,28 @@ class TestWrite_encrypt_video(TestCase):
 
         stream.close()
         reader.close()
+
+    def test_read(self):
+        root = r'./data/'
+        key_file = os.path.join(root, 'key.key')
+        raw_file = os.path.join(root, 'photo-1615529328331-f8917597711f.webp')
+        enc_file = os.path.join(root, 'photo-1615529328331-f8917597711f.enc.webp')
+        key = read_file(key_file)
+
+        stream = VideoStream(enc_file, key)
+        stream.open()
+        bos = BytesIO()
+        while True:
+            data = stream.read(1024 * 5)
+            if len(data) == 0:
+                break
+            bos.write(data)
+        bos.seek(0)
+        de_content = bos.read()
+        raw_content = read_file(raw_file)
+        print(f'解密后大小：{len(de_content)}')
+        print(f'文件大小：{len(raw_content)}')
+        assert de_content.hex() == raw_content.hex()
 
     def test_video_info(self):
         vi = VideoInfo()

@@ -98,7 +98,6 @@ class VideoContentIndex:
 
 class VideoHead:
 
-    #TODO 加入加密文件长度字段
     video_marker_bytes_cnt = len(HEAD_FILE_MARKER)  #: 文件标记占用的字节数
     video_file_size_bytes_cnt_len = 5  #: 包括文件标记在内的加密文件字节数量的数值所占用的字节数
     video_head_size_bytes_cnt_len = 4  #: 文件头字节数量的数值所占用的字节数
@@ -467,6 +466,7 @@ class VideoStream:
         self.key = key
         self.head: VideoHead = None
         self.index = 0
+        self.position = 0
         self.block_stream = None
         self.file_stream = None
         self._mpv_callbacks_ = []
@@ -491,8 +491,7 @@ class VideoStream:
             # 跳过信息区
             self.file_stream.seek(video_info_length, 1)
         self.index = 0
-        #TODO open中不读取数据流，在read中读取
-        self._open_datablock_stream()
+        self.position = 0
 
     def close(self):
         if self.file_stream is not None:
@@ -510,11 +509,32 @@ class VideoStream:
         self.file_stream = None
 
     def read(self, length):
-        remaining = length
 
+        if length < 0:
+            raise ValueError(f'negative length value {length}')
+
+        if self.index >= len(self.head.block_index):
+            return b''
+
+        # 第一次进入，直接打开数据流
+        if self.block_stream is None:
+            self._open_datablock_stream()
+
+        # 当前位置不在已经打开的数据流中，找到数据块，重新打开
+        if not self.is_in_data_block(self.position, self.index):
+            self.index = self.get_block_index(self.position)
+            if self.index >= len(self.head.block_index):
+                return b''
+            self._open_datablock_stream()
+            self.block_stream.seek(self.position - self.head.block_index[self.index].raw_start_pos)
+
+        remaining = length
         data = b''
+
         while True:
+
             new_data = self.block_stream.read(remaining)
+            self.position += len(new_data)
             remaining = remaining - len(new_data)
             data += new_data
 
@@ -531,20 +551,27 @@ class VideoStream:
         return data
 
     def seek(self, pos):
-        # TODO seek中不读取数据块，在read中读取
-        for idx, block in enumerate(self.head.block_index):
-            if pos >= block.raw_start_pos and pos < block.raw_start_pos + block.data_size:
-                # 正好为当前数据块，不需要重新打开
-                if self.index != idx:
-                    self.index = idx
-                    self._open_datablock_stream()
-                current_block = self.head.block_index[self.index]
-                self.block_stream.seek(pos - current_block.raw_start_pos)
-                break
-        return self.block_stream.tell() + self.head.block_index[self.index].raw_start_pos
+        if pos < 0:
+            raise ValueError(f'negative seek value {pos}')
+        if pos > self.head.raw_file_size:
+            raise ValueError(f'seek value {pos} > file size')
+        self.position = pos
+        return self.position
 
     def tell(self):
-        return self.block_stream.tell() + self.head.block_index[self.index].raw_start_pos
+        return self.position
+
+    def is_in_data_block(self, pos, index):
+        block = self.head.block_index[index]
+        if block.raw_start_pos <= pos < block.raw_start_pos + block.data_size:
+            return True
+        return False
+
+    def get_block_index(self, pos):
+        for idx, block in enumerate(self.head.block_index):
+            if block.raw_start_pos <= pos < block.raw_start_pos + block.data_size:
+                return idx
+        return len(self.head.block_index)
 
     def _open_datablock_stream(self):
         #TODO 当前block保存为self.current_block
