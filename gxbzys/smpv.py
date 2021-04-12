@@ -1,24 +1,17 @@
-import os
+
 import platform
-import threading
-import time
-import typing
+from math import isclose
 from enum import Enum
-from typing import Dict, Callable
-from urllib.parse import urlparse, parse_qs
+from typing import List
+from urllib.parse import urlparse
 
-import qtawesome as qta
-from PySide2.QtCore import QMutex, QPoint, Qt, QEvent, QObject
-from PySide2.QtGui import QCursor
-from PySide2.QtWidgets import QApplication, QAction, QMenu, QFileDialog, QMessageBox
-
-from gxbzys.dialogs import KeyMgrDialog
+from PySide2.QtCore import QEvent, QObject
+from PySide2.QtWidgets import QApplication
 
 from gxbzys import mpv
 from gxbzys.mpv import MPV, StreamOpenFn, StreamReadFn, StreamCloseFn, StreamSeekFn, StreamSizeFn, register_protocol
 from gxbzys.video import VideoStream
 from keymanager.key import KEY_CACHE
-from keymanager.utils import ICON_COLOR
 
 
 class EmptyStream:
@@ -54,6 +47,9 @@ class SMPV(MPV):
         self.register_crypto_protocol()
         self.opened_streams = {}
         self.event_object: QObject = event_object
+
+    def set_option(self, name, value):
+        mpv._mpv_set_option_string(self.handle, name.encode('utf-8'), value.encode('utf-8'))
 
     def load_config(self, path: str):
         mpv._mpv_load_config_file(self.handle, path.encode('utf-8'))
@@ -141,192 +137,82 @@ class MpvCryptoEvent(QEvent):
         self.crypto_type = crypto_type
 
 
-class SMPVPlayer(QObject):
+class VideoAspect:
 
-    def __init__(self, parent:QObject = None):
+    def __init__(self, w, h, mpv: SMPV):
+        self.w = w
+        self.h = h
+        self.mpv = mpv
 
-        super().__init__(parent)
+    def get_aspect(self):
+        return self.w / self.h
 
-        self.app = QApplication.instance()
-        self.key_mgr_dialog = KeyMgrDialog(model=False)
+    def get_display_name(self):
+        return f'{self.w}:{self.h}'
 
-        self._exit_flag = False
+    def get_option_value(self):
+        return self.get_display_name()
 
-        self.thread_dict = {}
-        self.thread_cnt = 0
-        self.thread_lock = QMutex()
+    def set_video_aspect(self):
+        self.mpv.set_option('video-aspect-override', self.get_option_value())
 
-        self.player = self._create_player()
 
-        self.menu_actions: Dict[str, MenuAction] = self._build_menu_actions()
-        self.pop_menu = self._create_menus()
-        self._init_pyqt()
-        self._install_key_bindings()
+class VideoAspects:
 
-        self.check_thread = None
+    def __init__(self, mpv: SMPV):
+        self.mpv = mpv
 
-    def start(self):
-        self.check_thread = threading.Thread(target=self._run)
-        self.check_thread.start()
+        self.w = 0
+        self.h = 0
+        self.dw = 0
+        self.dh = 0
 
-    def event(self, event: QEvent) -> bool:
+        self.predefined: List[VideoAspect] = []
 
-        if event.type() == MpvEventType.MpvContextMenuEventType.value:
-            self._show_menu()
-            return True
-
-        elif event.type() == MpvEventType.MpvShutdownEventType.value:
-            app = QApplication.instance()
-            if app.activeWindow() is not None:
-                app.activeWindow().close()
-            self.player.terminate()
-            self.key_mgr_dialog.close()
-            self.app.closeAllWindows()
-            self.app.quit()
-            self.app.exit(0)
-            return True
-
-        elif event.type() == MpvEventType.MpvCryptoEventType.value:
-            e: MpvCryptoEvent = event
-            if e.crypto_type == CryptoType.nokey:
-                msg = '没有加载默认的密钥'
-            elif e.crypto_type == CryptoType.timeout:
-                msg = '默认密钥已经超时，需重新加载'
-            else:
-                msg = '未知错误:' + str(e.crypto_type)
-            QMessageBox.critical(None, '错误', msg)
-            return True
-
-        return super().event(event)
-
-    def _run(self):
-        while not self._exit_flag:
-            if self.player.core_shutdown:
-                event = QEvent(MpvEventType.MpvShutdownEventType.value)
-                QApplication.instance().postEvent(self, event)
+    def add_predefined_aspect(self, width, height):
+        for aspect in self.predefined:
+            if aspect.w == width and aspect.h == height:
                 return
-            time.sleep(0.1)
+        self.predefined.append(VideoAspect(width, height, self.mpv))
 
-    def _init_pyqt(self):
-        self.pop_menu.popup(QPoint(20000, 10000))
-        self.pop_menu.close()
+    def is_video_ready(self):
+        return self.mpv.video_params is not None
 
-    def _build_menu_actions(self):
-        open_local_file_act: MenuAction = MenuAction(
-            name='open_local_file_act',
-            action=QAction(qta.icon('ei.file-new',
-                                    color=ICON_COLOR['color'],
-                                    color_active=ICON_COLOR['active']),
-                           '打开文件'),
-            func=self._open_local_file)
+    def update_w_h(self):
+        params = self.mpv.video_params
+        if params is None:
+            return
+        self.w = params['w']
+        self.h = params['h']
+        self.dw = params['dw']
+        self.dh = params['dh']
 
-        add_local_file_act: MenuAction = MenuAction(
-            name='add_local_file_act',
-            action=QAction(qta.icon('mdi.playlist-plus',
-                                    color=ICON_COLOR['color'],
-                                    color_active=ICON_COLOR['active']),
-                           '添加文件'),
-            func=self._add_local_file_act)
+    def get_current_aspect_index(self):
+        self.update_w_h()
 
-        open_key_mgr_act: MenuAction = MenuAction(
-            name='open_key_mgr_act',
-            action=QAction(qta.icon('fa5s.key',
-                                    color=ICON_COLOR['color'],
-                                    color_active=ICON_COLOR['active']),
-                           '密钥管理'),
-            func=self.key_mgr_dialog.active_exec)
+        current_aspect = VideoAspect(self.dw, self.dh, self.mpv).get_aspect()
+        #default_aspect = VideoAspect(self.w, self.h, self.mpv).get_aspect()
 
-        return {
-            open_local_file_act.name: open_local_file_act,
-            add_local_file_act.name: add_local_file_act,
-            open_key_mgr_act.name: open_key_mgr_act
-        }
+        # 比较当前的比例，相近的情况下返回-1，表示默认值
+        #if isclose(current_aspect, default_aspect, abs_tol=0.015):
+        #    return -1
 
-    def _create_menus(self):
-        pop_menu = QMenu()
-        pop_menu.setContextMenuPolicy(Qt.CustomContextMenu)
-        pop_menu.addAction(self.menu_actions['open_local_file_act'].action)
-        pop_menu.addAction(self.menu_actions['add_local_file_act'].action)
-        pop_menu.addAction(self.menu_actions['open_key_mgr_act'].action)
-        return pop_menu
+        # 遍历预设的比例，找出最相近的比例
+        aspect_diff = 100000
+        index = -1
+        for i, rect in enumerate(self.predefined):
+            aspect = rect.get_aspect()
+            d = abs(current_aspect - aspect)
+            if abs(d) < aspect_diff:
+                index = i
+                aspect_diff = d
 
-    def _create_player(self):
+        if not isclose(aspect_diff, 0, abs_tol=0.015):
+            return -1
 
-        player = SMPV(
-            event_object=self,
-            ytdl=True,
-            player_operation_mode='pseudo-gui',
-            autofit='70%',
-            #script_opts='osc-layout=bottombar,osc-seekbarstyle=bar,osc-deadzonesize=0,osc-minmousemove=3',
-            input_default_bindings=True,
-            input_vo_keyboard=True,
-            log_handler=print,
-            loglevel='info',
-            config_dir='./config',
-            config='yes',
-            border=False,
-            osd_bar=False,
-            osc=False)
+        # 默认比例小于最近的预设比例或者默认比例与最小的预设比例相近时，返回-1，表示默认值
+        #default_aspect_diff = abs(default_aspect - current_aspect)
+        #if default_aspect_diff <= aspect_diff or isclose(default_aspect_diff, aspect_diff, abs_tol=0.015):
+        #    return -1
 
-        @player.message_handler('show-menu')
-        def my_handler(*args):
-            event = QEvent(MpvEventType.MpvContextMenuEventType.value)
-            QApplication.instance().postEvent(self, event)
-
-        return player
-
-    def _install_key_bindings(self):
-        @self.player.on_key_press('ctrl+q')
-        def ctrl_q():
-            event = QEvent(MpvEventType.MpvShutdownEventType.value)
-            QApplication.instance().postEvent(self, event)
-
-        @self.player.on_key_press('mbtn_right')
-        def mbtn_right():
-            event = QEvent(MpvEventType.MpvContextMenuEventType.value)
-            QApplication.instance().postEvent(self, event)
-
-    def _show_menu(self):
-        selected_action = self.pop_menu.exec_(QCursor.pos())
-        for name, menu_action in self.menu_actions.items():
-            if menu_action.action == selected_action:
-                menu_action.func()
-
-    def _open_local_file(self):
-        file_list, ok = QFileDialog.getOpenFileNames(
-            parent=self.key_mgr_dialog,
-            caption="Open file",
-            directory="",
-            filter="mkv Video (*.mkv);;mp4 Video (*.mp4);;Movie files (*.mov);;All files (*.*)",
-        )
-        print(ok)
-        if len(file_list) > 0:
-            self.player.playlist_clear()
-            for f in file_list:
-                self.player.playlist_append(f)
-            self.player.playlist_pos = 0
-
-    def _add_local_file_act(self):
-        file_list, ok = QFileDialog.getOpenFileNames(
-            parent=self.key_mgr_dialog,
-            caption="Open file",
-            directory="",
-            filter="mkv Video (*.mkv);;mp4 Video (*.mp4);;Movie files (*.mov);;All files (*.*)",
-        )
-        print(ok)
-        if len(file_list) > 0:
-            for f in file_list:
-                self.player.playlist_append(f)
-
-    def _open_key_mgr(self):
-        self.key_mgr_dialog.active_exec()
-
-class MenuAction:
-
-    def __init__(self,
-                 name: str,
-                 action: QAction,
-                 func: Callable):
-        self.name = name
-        self.action = action
-        self.func = func
+        return index
