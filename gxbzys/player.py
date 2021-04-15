@@ -8,7 +8,7 @@ from PySide2.QtGui import QCursor
 from PySide2.QtWidgets import QApplication, QMessageBox, QAction, QMenu, QFileDialog
 
 from gxbzys.dialogs import KeyMgrDialog
-from gxbzys.smpv import MpvEventType, MpvCryptoEvent, CryptoType, SMPV, VideoAspects, VideoAspect
+from gxbzys.smpv import MpvEventType, MpvCryptoEvent, CryptoType, SMPV, VideoAspects, VideoAspect, VideoRotate
 from keymanager.utils import ICON_COLOR
 
 
@@ -29,6 +29,7 @@ class SMPVPlayer(QObject):
 
         self.player = self._create_player()
         self.video_aspect = self._create_aspect()
+        self.video_rotate = VideoRotate(self.player)
 
         self.menu_actions: Dict[str, MenuAction] = self._build_menu_actions()
         #self.pop_menu = self._create_menus()
@@ -122,11 +123,38 @@ class SMPVPlayer(QObject):
             func=lambda: self.player.set_option('video-aspect-override', 'no')
         )
 
+        video_rotate_default_act: MenuAction = MenuAction(
+            name='video_rotate_default_act',
+            action=QAction('恢复默认'),
+            func=self.video_rotate.rotate_reset
+        )
+
+        video_rotate_left_act: MenuAction = MenuAction(
+            name='video_rotate_left_act',
+            action=QAction(qta.icon('fa.rotate-left',
+                                    color=ICON_COLOR['color'],
+                                    color_active=ICON_COLOR['active']),
+                           '向左90°'),
+            func=self.video_rotate.rotate_left
+        )
+
+        video_rotate_right_act: MenuAction = MenuAction(
+            name='video_rotate_right_act',
+            action=QAction(qta.icon('fa.rotate-right',
+                                    color=ICON_COLOR['color'],
+                                    color_active=ICON_COLOR['active']),
+                           '向右90°'),
+            func=self.video_rotate.rotate_right
+        )
+
         actions = {
             open_local_file_act.name: open_local_file_act,
             add_local_file_act.name: add_local_file_act,
             open_key_mgr_act.name: open_key_mgr_act,
-            video_aspect_default_act.name: video_aspect_default_act
+            video_aspect_default_act.name: video_aspect_default_act,
+            video_rotate_default_act.name: video_rotate_default_act,
+            video_rotate_left_act.name: video_rotate_left_act,
+            video_rotate_right_act.name: video_rotate_right_act
         }
 
         predefined = self.video_aspect.predefined
@@ -143,13 +171,30 @@ class SMPVPlayer(QObject):
         return actions
 
     def _create_menus(self):
+
+        params = self.player.video_params
+
         pop_menu = QMenu()
         pop_menu.setContextMenuPolicy(Qt.CustomContextMenu)
         pop_menu.addAction(self.menu_actions['open_local_file_act'].action)
         pop_menu.addAction(self.menu_actions['add_local_file_act'].action)
 
-        video_aspect_menu = QMenu('视频比例')
+        video_aspect_menu = QMenu('画面比例')
+        video_rotate_menu = QMenu('画面旋转')
+        video_aspect_menu.setIcon(qta.icon('mdi.aspect-ratio',
+                                           color=ICON_COLOR['color'],
+                                           color_active=ICON_COLOR['active']))
+        video_rotate_menu.setIcon(qta.icon('mdi.crop-rotate',
+                                           color=ICON_COLOR['color'],
+                                           color_active=ICON_COLOR['active']))
+
         pop_menu.addMenu(video_aspect_menu)
+        pop_menu.addMenu(video_rotate_menu)
+
+        video_rotate_menu.addAction(self.menu_actions['video_rotate_default_act'].action)
+        video_rotate_menu.addAction(self.menu_actions['video_rotate_left_act'].action)
+        video_rotate_menu.addAction(self.menu_actions['video_rotate_right_act'].action)
+
         is_video_ready = self.video_aspect.is_video_ready()
 
         if is_video_ready:

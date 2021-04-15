@@ -216,3 +216,32 @@ class VideoAspects:
         #    return -1
 
         return index
+
+
+class VideoRotate:
+
+    def __init__(self, mpv: SMPV):
+        self.mpv = mpv
+
+    def rotate_left(self, params=None):
+        self.rotate(90, params)
+
+    def rotate_right(self, params=None):
+        self.rotate(-90, params)
+
+    def rotate(self, value, params=None):
+        if params is None:
+            params = self.mpv.video_params
+        if params is None:
+            return
+        current_rotate = int(params['rotate'])
+        new_rotate = (current_rotate + value) % 360
+        self.mpv.set_option('video-rotate', str(new_rotate))
+
+    def rotate_reset(self, params=None):
+        if params is None:
+            params = self.mpv.video_params
+        if params is None:
+            return
+        self.mpv.set_option('video-rotate', str(0))
+
