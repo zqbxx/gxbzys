@@ -1,6 +1,9 @@
+import os
 import threading
 import time
+from pathlib import Path
 from typing import List, Callable, Dict
+from urllib.parse import urlparse
 
 import qtawesome as qta
 from PySide2.QtCore import QObject, QMutex, QEvent, QPoint, Qt
@@ -147,6 +150,15 @@ class SMPVPlayer(QObject):
             func=self.video_rotate.rotate_right
         )
 
+        open_in_explorer_act: MenuAction = MenuAction(
+            name='open_in_explorer_act',
+            action=QAction(qta.icon('fa.folder-open-o',
+                                    color=ICON_COLOR['color'],
+                                    color_active=ICON_COLOR['active']),
+                           '在文件夹中打开'),
+            func=self._open_in_explorer
+        )
+
         actions = {
             open_local_file_act.name: open_local_file_act,
             add_local_file_act.name: add_local_file_act,
@@ -154,7 +166,8 @@ class SMPVPlayer(QObject):
             video_aspect_default_act.name: video_aspect_default_act,
             video_rotate_default_act.name: video_rotate_default_act,
             video_rotate_left_act.name: video_rotate_left_act,
-            video_rotate_right_act.name: video_rotate_right_act
+            video_rotate_right_act.name: video_rotate_right_act,
+            open_in_explorer_act.name: open_in_explorer_act
         }
 
         predefined = self.video_aspect.predefined
@@ -216,6 +229,7 @@ class SMPVPlayer(QObject):
                 video_aspect_menu.addAction(action.action)
 
         pop_menu.addAction(self.menu_actions['open_key_mgr_act'].action)
+        pop_menu.addAction(self.menu_actions['open_in_explorer_act'].action)
         return pop_menu
 
     def _create_player(self):
@@ -289,6 +303,26 @@ class SMPVPlayer(QObject):
 
     def _open_key_mgr(self):
         self.key_mgr_dialog.active_exec()
+
+    def _open_in_explorer(self):
+
+        if self.player.path is None:
+            return
+
+        url = urlparse(self.player.path)
+
+        if not (url.netloc == ''):
+            return
+
+        file_path = Path(self.player.path)
+
+        if not file_path.is_file():
+            return
+
+        if not file_path.parent.is_dir():
+            return
+
+        os.startfile(file_path.parent)
 
 
 class MenuAction:
