@@ -1,6 +1,7 @@
 import os
 import threading
 import time
+from functools import partial
 from pathlib import Path
 from typing import List, Callable, Dict
 from urllib.parse import urlparse
@@ -11,7 +12,8 @@ from PySide2.QtGui import QCursor
 from PySide2.QtWidgets import QApplication, QMessageBox, QAction, QMenu, QFileDialog
 
 from gxbzys.dialogs import KeyMgrDialog
-from gxbzys.smpv import MpvEventType, MpvCryptoEvent, CryptoType, SMPV, VideoAspects, VideoAspect, VideoRotate
+from gxbzys.smpv import MpvEventType, MpvCryptoEvent, CryptoType, SMPV, VideoAspects, VideoAspect, VideoRotate, \
+    AudioTracks
 from keymanager.utils import ICON_COLOR
 
 
@@ -33,6 +35,7 @@ class SMPVPlayer(QObject):
         self.player = self._create_player()
         self.video_aspect = self._create_aspect()
         self.video_rotate = VideoRotate(self.player)
+        self.audio_tracks = AudioTracks(self.player)
 
         self.menu_actions: Dict[str, MenuAction] = self._build_menu_actions()
         #self.pop_menu = self._create_menus()
@@ -185,48 +188,36 @@ class SMPVPlayer(QObject):
 
     def _create_menus(self):
 
-        params = self.player.video_params
-
         pop_menu = QMenu()
         pop_menu.setContextMenuPolicy(Qt.CustomContextMenu)
         pop_menu.addAction(self.menu_actions['open_local_file_act'].action)
         pop_menu.addAction(self.menu_actions['add_local_file_act'].action)
 
+        # 画面比例
         video_aspect_menu = QMenu('画面比例')
-        video_rotate_menu = QMenu('画面旋转')
         video_aspect_menu.setIcon(qta.icon('mdi.aspect-ratio',
                                            color=ICON_COLOR['color'],
                                            color_active=ICON_COLOR['active']))
+        video_aspect_menu.aboutToShow.connect(partial(self._show_aspect_submenu, parent=video_aspect_menu))
+        pop_menu.addMenu(video_aspect_menu)
+
+        # 画面旋转
+        video_rotate_menu = QMenu('画面旋转')
         video_rotate_menu.setIcon(qta.icon('mdi.crop-rotate',
                                            color=ICON_COLOR['color'],
                                            color_active=ICON_COLOR['active']))
-
-        pop_menu.addMenu(video_aspect_menu)
         pop_menu.addMenu(video_rotate_menu)
-
         video_rotate_menu.addAction(self.menu_actions['video_rotate_default_act'].action)
         video_rotate_menu.addAction(self.menu_actions['video_rotate_left_act'].action)
         video_rotate_menu.addAction(self.menu_actions['video_rotate_right_act'].action)
 
-        is_video_ready = self.video_aspect.is_video_ready()
-
-        if is_video_ready:
-            aspect_index = self.video_aspect.get_current_aspect_index()
-            if aspect_index == -1:
-                current_aspect = None
-            else:
-                current_aspect = self.video_aspect.predefined[aspect_index]
-
-        for name, action in self.menu_actions.items():
-            if name.startswith('video_aspect_'):
-                if is_video_ready:
-                    if current_aspect is not None and action.data is not None:
-                        aspect: VideoAspect = action.data
-                        if aspect.get_option_value() == current_aspect.get_option_value():
-                            action.action.setIcon(qta.icon('fa.check', color=ICON_COLOR['color']))
-                        else:
-                            action.action.setIcon(qta.icon('fa.square-o', color=ICON_COLOR['color']))
-                video_aspect_menu.addAction(action.action)
+        # 音轨
+        audio_select_menu = QMenu('音轨')
+        audio_select_menu.setIcon(qta.icon('ei.music',
+                                           color=ICON_COLOR['color'],
+                                           color_active=ICON_COLOR['active']))
+        audio_select_menu.aboutToShow.connect(partial(self._show_select_audio_track_submenu, parent=audio_select_menu))
+        pop_menu.addMenu(audio_select_menu)
 
         pop_menu.addAction(self.menu_actions['open_key_mgr_act'].action)
         pop_menu.addAction(self.menu_actions['open_in_explorer_act'].action)
@@ -239,7 +230,6 @@ class SMPVPlayer(QObject):
             ytdl=True,
             player_operation_mode='pseudo-gui',
             autofit='70%',
-            #script_opts='osc-layout=bottombar,osc-seekbarstyle=bar,osc-deadzonesize=0,osc-minmousemove=3',
             input_default_bindings=True,
             input_vo_keyboard=True,
             log_handler=print,
@@ -274,6 +264,55 @@ class SMPVPlayer(QObject):
         for name, menu_action in self.menu_actions.items():
             if menu_action.action == selected_action:
                 menu_action.func()
+
+    def _clear_submenu(self, parent: QMenu, key: str=None):
+        parent.clear()
+        if key is None:
+            return
+        deleted:List[str] = []
+        for action_name in self.menu_actions.keys():
+            if action_name.startswith(key):
+                deleted.append(action_name)
+        for action_name in deleted:
+            del self.menu_actions[action_name]
+
+    def _show_aspect_submenu(self, parent: QMenu):
+        self._clear_submenu(parent)
+        is_video_ready = self.video_aspect.is_video_ready()
+
+        if is_video_ready:
+            aspect_index = self.video_aspect.get_current_aspect_index()
+            if aspect_index == -1:
+                current_aspect = None
+            else:
+                current_aspect = self.video_aspect.predefined[aspect_index]
+
+        for name, action in self.menu_actions.items():
+            if name.startswith('video_aspect_'):
+                if is_video_ready:
+                    if current_aspect is not None and action.data is not None:
+                        aspect: VideoAspect = action.data
+                        if aspect.get_option_value() == current_aspect.get_option_value():
+                            action.action.setIcon(qta.icon('fa.check', color=ICON_COLOR['color']))
+                        else:
+                            action.action.setIcon(qta.icon('fa.square-o', color=ICON_COLOR['color']))
+                parent.addAction(action.action)
+
+    def _show_select_audio_track_submenu(self, parent: QMenu):
+        self._clear_submenu(parent, 'select_audio_track_')
+        tracks = self.audio_tracks.get_tracks()
+        for track in tracks:
+            print('selected:' + str(track.selected), ' id ', str(track.id), ': ', track.get_display_name())
+            icon_name = 'fa.check' if track.selected  else 'fa.square-o'
+            action: MenuAction = MenuAction(
+                name='select_audio_track_' + track.get_display_name() + '_act',
+                action=QAction(qta.icon(icon_name, color=ICON_COLOR['color']),
+                               track.get_display_name()),
+                func=track.select,
+                data=track
+            )
+            self.menu_actions[action.name] = action
+            parent.addAction(action.action)
 
     def _open_local_file(self):
         file_list, ok = QFileDialog.getOpenFileNames(

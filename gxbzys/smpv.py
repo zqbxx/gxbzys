@@ -191,11 +191,6 @@ class VideoAspects:
         self.update_w_h()
 
         current_aspect = VideoAspect(self.dw, self.dh, self.mpv).get_aspect()
-        #default_aspect = VideoAspect(self.w, self.h, self.mpv).get_aspect()
-
-        # 比较当前的比例，相近的情况下返回-1，表示默认值
-        #if isclose(current_aspect, default_aspect, abs_tol=0.015):
-        #    return -1
 
         # 遍历预设的比例，找出最相近的比例
         aspect_diff = 100000
@@ -209,11 +204,6 @@ class VideoAspects:
 
         if not isclose(aspect_diff, 0, abs_tol=0.015):
             return -1
-
-        # 默认比例小于最近的预设比例或者默认比例与最小的预设比例相近时，返回-1，表示默认值
-        #default_aspect_diff = abs(default_aspect - current_aspect)
-        #if default_aspect_diff <= aspect_diff or isclose(default_aspect_diff, aspect_diff, abs_tol=0.015):
-        #    return -1
 
         return index
 
@@ -245,3 +235,51 @@ class VideoRotate:
             return
         self.mpv.set_option('video-rotate', str(0))
 
+
+class AudioTrack:
+
+    def __init__(self,mpv:SMPV, index: int, id: int, selected: bool, title: str, lang: str):
+        self.mpv = mpv
+        self.index = index
+        self.id = id
+        self.selected = selected
+        self.title = title
+        self.lang = lang
+
+    def select(self):
+        self.mpv.set_option('aid', str(self.id))
+
+    def get_display_name(self):
+        name = ''
+        if self.lang is None:
+            name += '未知'
+        else:
+            name += self.lang
+        name += ' - '
+        if self.title is None:
+            name += '未知'
+        else:
+            name += self.title
+        return name
+
+
+class AudioTracks:
+
+    def __init__(self, mpv: SMPV):
+        self.mpv = mpv
+
+    def get_tracks(self) -> List[AudioTrack]:
+        track_list = self.mpv.track_list
+        ret_list: List[AudioTrack] = []
+        for index, track in enumerate(track_list):
+            if track['type'] == 'audio':
+                id = track['id']
+                selected = track['selected']
+                title = None
+                lang = None
+                if 'title' in track:
+                    title = track['title']
+                if 'lang' in track:
+                    lang = track['lang']
+                ret_list.append(AudioTrack(self.mpv, index, id,selected, title, lang))
+        return ret_list
