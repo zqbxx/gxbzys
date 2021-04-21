@@ -6,7 +6,7 @@ from typing import List
 from urllib.parse import urlparse
 
 from PySide2.QtCore import QEvent, QObject
-from PySide2.QtWidgets import QApplication
+from PySide2.QtWidgets import QApplication, QFileDialog
 
 from gxbzys import mpv
 from gxbzys.mpv import MPV, StreamOpenFn, StreamReadFn, StreamCloseFn, StreamSeekFn, StreamSizeFn, register_protocol
@@ -236,18 +236,22 @@ class VideoRotate:
         self.mpv.set_option('video-rotate', str(0))
 
 
-class AudioTrack:
+class Track:
 
-    def __init__(self,mpv:SMPV, index: int, id: int, selected: bool, title: str, lang: str):
+    def __init__(self,mpv:SMPV, index: int, id: int, selected: bool, title: str, lang: str, type: str):
         self.mpv = mpv
         self.index = index
         self.id = id
         self.selected = selected
         self.title = title
         self.lang = lang
+        self.type = type
 
     def select(self):
-        self.mpv.set_option('aid', str(self.id))
+        if self.type == 'audio':
+            self.mpv.set_option('aid', str(self.id))
+        elif self.type == 'sub':
+            self.mpv.set_option('sid', str(self.id))
 
     def get_display_name(self):
         name = ''
@@ -263,16 +267,17 @@ class AudioTrack:
         return name
 
 
-class AudioTracks:
+class Tracks:
 
-    def __init__(self, mpv: SMPV):
+    def __init__(self, mpv: SMPV, type: str):
         self.mpv = mpv
+        self.type = type
 
-    def get_tracks(self) -> List[AudioTrack]:
+    def get_tracks(self) -> List[Track]:
         track_list = self.mpv.track_list
-        ret_list: List[AudioTrack] = []
+        ret_list: List[Track] = []
         for index, track in enumerate(track_list):
-            if track['type'] == 'audio':
+            if track['type'] == self.type:
                 id = track['id']
                 selected = track['selected']
                 title = None
@@ -281,5 +286,5 @@ class AudioTracks:
                     title = track['title']
                 if 'lang' in track:
                     lang = track['lang']
-                ret_list.append(AudioTrack(self.mpv, index, id,selected, title, lang))
+                ret_list.append(Track(self.mpv, index, id, selected, title, lang, self.type))
         return ret_list

@@ -13,7 +13,7 @@ from PySide2.QtWidgets import QApplication, QMessageBox, QAction, QMenu, QFileDi
 
 from gxbzys.dialogs import KeyMgrDialog
 from gxbzys.smpv import MpvEventType, MpvCryptoEvent, CryptoType, SMPV, VideoAspects, VideoAspect, VideoRotate, \
-    AudioTracks
+    Tracks
 from keymanager.utils import ICON_COLOR
 
 
@@ -35,7 +35,8 @@ class SMPVPlayer(QObject):
         self.player = self._create_player()
         self.video_aspect = self._create_aspect()
         self.video_rotate = VideoRotate(self.player)
-        self.audio_tracks = AudioTracks(self.player)
+        self.audio_tracks = Tracks(self.player, 'audio')
+        self.sub_tracks = Tracks(self.player, 'sub')
 
         self.menu_actions: Dict[str, MenuAction] = self._build_menu_actions()
         #self.pop_menu = self._create_menus()
@@ -211,6 +212,14 @@ class SMPVPlayer(QObject):
         video_rotate_menu.addAction(self.menu_actions['video_rotate_left_act'].action)
         video_rotate_menu.addAction(self.menu_actions['video_rotate_right_act'].action)
 
+        # 字幕
+        sub_select_menu = QMenu('字幕')
+        sub_select_menu.setIcon(qta.icon('mdi.timeline-text-outline',
+                                           color=ICON_COLOR['color'],
+                                           color_active=ICON_COLOR['active']))
+        sub_select_menu.aboutToShow.connect(partial(self._show_select_sub_submenu, parent=sub_select_menu))
+        pop_menu.addMenu(sub_select_menu)
+
         # 音轨
         audio_select_menu = QMenu('音轨')
         audio_select_menu.setIcon(qta.icon('ei.music',
@@ -314,6 +323,39 @@ class SMPVPlayer(QObject):
             self.menu_actions[action.name] = action
             parent.addAction(action.action)
 
+    def _show_select_sub_submenu(self, parent: QMenu):
+        self._clear_submenu(parent, 'select_sub_')
+
+        action: MenuAction = MenuAction(
+            name='select_sub_load_external_sub_act',
+            action=QAction('加载外挂字幕'),
+            func=self._load_external_sub
+        )
+        self.menu_actions[action.name] = action
+        parent.addAction(action.action)
+
+        action: MenuAction = MenuAction(
+            name='select_sub_no_act',
+            action=QAction('禁用字幕'),
+            func=lambda : self.player.set_option('sid', 'no')
+        )
+        self.menu_actions[action.name] = action
+        parent.addAction(action.action)
+
+        tracks = self.sub_tracks.get_tracks()
+        for track in tracks:
+            print('[sub]selected:' + str(track.selected), ' id ', str(track.id), ': ', track.get_display_name())
+            icon_name = 'fa.check' if track.selected else 'fa.square-o'
+            action: MenuAction = MenuAction(
+                name='select_sub_' + track.get_display_name() + '_act',
+                action=QAction(qta.icon(icon_name, color=ICON_COLOR['color']),
+                               track.get_display_name()),
+                func=track.select,
+                data=track
+            )
+            self.menu_actions[action.name] = action
+            parent.addAction(action.action)
+
     def _open_local_file(self):
         file_list, ok = QFileDialog.getOpenFileNames(
             parent=self.key_mgr_dialog,
@@ -362,6 +404,34 @@ class SMPVPlayer(QObject):
             return
 
         os.startfile(file_path.parent)
+
+    def _load_external_sub(self):
+
+        if self.player.path is None:
+            return
+
+        url = urlparse(self.player.path)
+
+        if not (url.netloc == ''):
+            return
+
+        file_path = Path(self.player.path)
+
+        if not file_path.is_file():
+            return
+
+        if not file_path.parent.is_dir():
+            return
+
+        sub_path, ok = QFileDialog.getOpenFileName(
+            parent=None,
+            caption="选择字幕",
+            dir=str(file_path.parent),
+            filter="srt (*.srt);;ass (*.ass)",
+        )
+        print(ok)
+        if sub_path:
+            self.player.command('sub-add', sub_path)
 
 
 class MenuAction:
