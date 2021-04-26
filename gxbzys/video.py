@@ -1,12 +1,12 @@
+import logging
 import os
 from typing import List, Union, Dict, Callable
 from io import BytesIO, FileIO
 from typing import TypeVar
 
-from typing.io import IO
+from typing import IO
 
 from keymanager.encryptor import encrypt_data1, decrypt_data1
-
 
 BLOCK_SIZE = 1024 * 1024
 HEAD_FILE_MARKER = b'EV000001'
@@ -17,12 +17,11 @@ VideoHeadType = TypeVar("VideoHeadType", bound="VideoHead")
 
 
 class VideoContentIndex:
-
     iv_len = 16  #: 偏移向量占用的字节长度
     start_pos_bytes_len = 5  #: 数据块在加密文件中起始位置的数值占用的字节长度
     raw_start_pos_bytes_len = 5  #: 数据块在原始文件中起始位置的数值占用的字节长度
-    data_bytes_cnt_len = 3  #：未加密的数据块大小的数值占用的字节长度
-    block_bytes_cnt_len = 3  #：加密以后的数据块大小的数值占用的字节长度
+    data_bytes_cnt_len = 3  # ：未加密的数据块大小的数值占用的字节长度
+    block_bytes_cnt_len = 3  # ：加密以后的数据块大小的数值占用的字节长度
 
     video_content_index_bytes = (
             iv_len +  # 7
@@ -40,6 +39,7 @@ class VideoContentIndex:
     :param raw_start_pos: 数据块在原始文件中的起始位置
     :param block_size: 加密以后的数据块大小
     """
+
     def __init__(self,
                  iv: bytes = EMPTY_IV,
                  data_size: int = 0,
@@ -97,7 +97,6 @@ class VideoContentIndex:
 
 
 class VideoHead:
-
     video_marker_bytes_cnt = len(HEAD_FILE_MARKER)  #: 文件标记占用的字节数
     video_file_size_bytes_cnt_len = 5  #: 包括文件标记在内的加密文件字节数量的数值所占用的字节数
     video_head_size_bytes_cnt_len = 4  #: 文件头字节数量的数值所占用的字节数
@@ -108,6 +107,7 @@ class VideoHead:
     """
     加密视频文件文件头
     """
+
     def __init__(self):
         self.file_size = 0  #: 包括文件标记在内的加密文件的大小
         self.head_size = 0  #: 文件头字节数，包含文件头中所有数据，包括head_size变量本身
@@ -127,7 +127,7 @@ class VideoHead:
         # 重置size，再开始计算
         self.head_size = 0
 
-        self.head_size += self.video_marker_bytes_cnt  #  marker, 8
+        self.head_size += self.video_marker_bytes_cnt  # marker, 8
         self.head_size += self.video_file_size_bytes_cnt_len  # file_size 5
         self.head_size += self.video_head_size_bytes_cnt_len  # head_size, 4
         self.head_size += self.video_raw_file_size_bytes_cnt_len  # raw_file_size, 5
@@ -193,7 +193,7 @@ class VideoHead:
         vh.raw_file_size = int.from_bytes(bis.read(cls.video_raw_file_size_bytes_cnt_len), byteorder='big')  # 5
         vh.video_info_index_size = int.from_bytes(bis.read(cls.video_info_index_bytes_cnt_len), byteorder='big')  # 5
         vh.video_info_index_cnt = int.from_bytes(bis.read(cls.video_info_index_cnt_bytes_len), byteorder='big')  # 2
-        
+
         if vh.video_info_index_size > 0:
             for i in range(vh.video_info_index_cnt):
                 index_data = bis.read(VideoInfoIndex.video_info_index_len)
@@ -247,7 +247,6 @@ class VideoInfoException(Exception):
 
 
 class VideoInfoIndex:
-
     video_info_bytes_cnt_len = 4
     video_info_iv_len = 16
 
@@ -267,14 +266,13 @@ class VideoInfoIndex:
     @classmethod
     def from_bytes(cls, data):
         bis = BytesIO(data)
-        video_info_index= VideoInfoIndex()
-        video_info_index.length= int.from_bytes(bis.read(cls.video_info_bytes_cnt_len), byteorder='big')
+        video_info_index = VideoInfoIndex()
+        video_info_index.length = int.from_bytes(bis.read(cls.video_info_bytes_cnt_len), byteorder='big')
         video_info_index.iv = bis.read(cls.video_info_iv_len)
         return video_info_index
 
 
 class VideoInfo:
-
     head_all_info_bytes_cnt_len = 2  # 所有信息数量的数值占用的字节数
 
     data_bytes_cnt_len = 3  # 信息数据长度的数值占用的字节数
@@ -337,7 +335,7 @@ class VideoInfo:
         for name in self.info:
             data = self.info[name]
             bos.write(self.pad(name, self.name_max_length))  # 1024
-            #bos.write(len(data).to_bytes(self.data_bytes_cnt_len, byteorder='big'))  # 3
+            # bos.write(len(data).to_bytes(self.data_bytes_cnt_len, byteorder='big'))  # 3
             data_len = self._get_data_length(data)
             bos.write(data_len.to_bytes(self.data_bytes_cnt_len, byteorder='big'))  # 3
             loaded_data = self._load_data(data)
@@ -387,7 +385,7 @@ class VideoInfo:
         return pad_len * VideoInfo.PAD_DATA + data
 
     @classmethod
-    def unpad(cls, data:bytes) -> bytes:
+    def unpad(cls, data: bytes) -> bytes:
         result = bytearray(b'')
         data_array = [b'%c' % i for i in data]
         for b in data_array:
@@ -471,6 +469,11 @@ class VideoStream:
         self.file_stream = None
         self._mpv_callbacks_ = []
         self.video_info_reader: VideoInfoReader = None
+        self.current_block = None
+        self.logger = logging.getLogger('CryptoVideoStream')
+
+    def _debug(self, text):
+        self.logger.debug(text)
 
     def open(self):
         self.file_stream = open(self.file_path, 'rb')
@@ -510,6 +513,8 @@ class VideoStream:
 
     def read(self, length):
 
+        self._debug(f'before read, position: {self.position}, to read length: {length}')
+
         if length < 0:
             raise ValueError(f'negative length value {length}')
 
@@ -521,8 +526,7 @@ class VideoStream:
             self._open_datablock_stream()
 
         # 当前位置不在已经打开的数据流中，找到数据块，重新打开
-        if not self.is_in_data_block(self.position, self.index):
-            self.index = self.get_block_index(self.position)
+        if not self.is_in_data_block(self.position):
             if self.index >= len(self.head.block_index):
                 return b''
             self._open_datablock_stream()
@@ -547,7 +551,7 @@ class VideoStream:
             if self.index >= len(self.head.block_index):
                 break
             self._open_datablock_stream()
-
+        self._debug(f'after read, data length: {len(data)}, position: {self.position}')
         return data
 
     def seek(self, pos):
@@ -556,13 +560,15 @@ class VideoStream:
         if pos > self.head.raw_file_size:
             raise ValueError(f'seek value {pos} > file size')
         self.position = pos
+        self.index = self.get_block_index(self.position)
+        self._debug(f'seek to {self.position}, block index is {self.index}')
         return self.position
 
     def tell(self):
         return self.position
 
-    def is_in_data_block(self, pos, index):
-        block = self.head.block_index[index]
+    def is_in_data_block(self, pos):
+        block = self.current_block
         if block.raw_start_pos <= pos < block.raw_start_pos + block.data_size:
             return True
         return False
@@ -570,17 +576,20 @@ class VideoStream:
     def get_block_index(self, pos):
         for idx, block in enumerate(self.head.block_index):
             if block.raw_start_pos <= pos < block.raw_start_pos + block.data_size:
+                self._debug(f'block {idx} match position {pos}, block start: {block.raw_start_pos}, block end: {block.raw_start_pos + block.data_size}')
                 return idx
+        self._debug(f'can not find block, return {len(self.head.block_index)}')
         return len(self.head.block_index)
 
     def _open_datablock_stream(self):
-        #TODO 当前block保存为self.current_block
+        self._debug(f'open data block {self.index}')
         block = self.head.block_index[self.index]
         enc_data = block.read_block_data(self.file_stream)
         data = decrypt_data1(self.key, block.iv, block.data_size, enc_data)
         if self.block_stream is not None:
             self.block_stream.close()
         self.block_stream = BytesIO(data)
+        self.current_block = block
 
 
 class VideoInfoReader:

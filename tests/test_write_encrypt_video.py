@@ -150,6 +150,8 @@ class TestWrite_encrypt_video(TestCase):
         read_and_assert(stream, reader, 3000)
         seek(stream, reader, 24000)
         read_and_assert(stream, reader, 30000)
+        seek(stream, reader, 10)
+        read_and_assert(stream, reader, 5000)
 
         video_info_reader = stream.video_info_reader
         video_info_reader.open()
@@ -178,7 +180,7 @@ class TestWrite_encrypt_video(TestCase):
 
         for i, video_info in enumerate(video_info_list):
             assert video_info.to_bytes().hex() == video_info_list_1[i].to_bytes().hex()
-
+        video_info_reader.close()
         stream.close()
         reader.close()
 
@@ -197,6 +199,7 @@ class TestWrite_encrypt_video(TestCase):
             if len(data) == 0:
                 break
             bos.write(data)
+        stream.close()
         bos.seek(0)
         de_content = bos.read()
         raw_content = read_file(raw_file)
