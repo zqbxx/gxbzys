@@ -2,11 +2,12 @@
 import platform
 from math import isclose
 from enum import Enum
+from pathlib import Path
 from typing import List
 from urllib.parse import urlparse
 
 from PySide2.QtCore import QEvent, QObject
-from PySide2.QtWidgets import QApplication, QFileDialog
+from PySide2.QtWidgets import QApplication
 
 from gxbzys import mpv
 from gxbzys.mpv import MPV, StreamOpenFn, StreamReadFn, StreamCloseFn, StreamSeekFn, StreamSizeFn, register_protocol
@@ -288,3 +289,45 @@ class Tracks:
                     lang = track['lang']
                 ret_list.append(Track(self.mpv, index, id, selected, title, lang, self.type))
         return ret_list
+
+
+class PlayListFile:
+
+    def __init__(self, id, file_path, current, playing, index: int, mpv: SMPV):
+        self.file_path = file_path
+        self.current = current
+        self.playing = playing
+        self.id = id
+        self.mpv = mpv
+        self.index = index
+
+    def get_display_name(self):
+        file_name = Path(self.file_path).name
+        if len(file_name) >= 26:
+            return file_name[0:10] + '...' + file_name[-10:]
+        return file_name
+
+    def select(self):
+        if self.current:
+            return
+        self.mpv.playlist_pos = str(self.index)
+
+
+class PlayList:
+
+    def __init__(self, mpv: SMPV):
+        self.mpv = mpv
+
+    def get_playlist(self) -> List[PlayListFile]:
+        play_list_files: List[PlayListFile] = []
+        for idx, element in enumerate(self.mpv.playlist):
+            f = PlayListFile(
+                element['id'],
+                element['filename'],
+                element.get('current', False),
+                element.get('playing', False),
+                idx,
+                self.mpv
+            )
+            play_list_files.append(f)
+        return play_list_files

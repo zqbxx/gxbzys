@@ -7,8 +7,8 @@ from typing import List, Callable, Dict
 from urllib.parse import urlparse
 
 import qtawesome as qta
-from PySide2.QtCore import QObject, QMutex, QEvent, QPoint, Qt
-from PySide2.QtGui import QCursor
+from PySide2.QtCore import QObject, QMutex, QEvent, Qt
+from PySide2.QtGui import QCursor, QIcon
 from PySide2.QtWidgets import QApplication, QMessageBox, QAction, QMenu, QFileDialog
 
 from gxbzys.dialogs import KeyMgrDialog
@@ -34,13 +34,8 @@ class SMPVPlayer(QObject):
 
         self.player = self._create_player()
         self.video_aspect = self._create_aspect()
-        self.video_rotate = VideoRotate(self.player)
-        self.audio_tracks = Tracks(self.player, 'audio')
-        self.sub_tracks = Tracks(self.player, 'sub')
 
         self.menu_actions: Dict[str, MenuAction] = self._build_menu_actions()
-        #self.pop_menu = self._create_menus()
-        self._init_pyqt()
         self._install_key_bindings()
 
         self.check_thread = None
@@ -87,13 +82,9 @@ class SMPVPlayer(QObject):
                 return
             time.sleep(0.1)
 
-    def _init_pyqt(self):
-        #self.pop_menu.popup(QPoint(20000, 10000))
-        #self.pop_menu.close()
-        pass
-
     def _create_aspect(self):
         video_aspect = VideoAspects(self.player)
+        video_aspect.add_predefined_aspect(9, 16)
         video_aspect.add_predefined_aspect(4, 3)
         video_aspect.add_predefined_aspect(16, 9)
         video_aspect.add_predefined_aspect(2.35, 1)
@@ -129,11 +120,11 @@ class SMPVPlayer(QObject):
             action=QAction('默认比例'),
             func=lambda: self.player.set_option('video-aspect-override', 'no')
         )
-
+        video_rotate = VideoRotate(self.player)
         video_rotate_default_act: MenuAction = MenuAction(
             name='video_rotate_default_act',
             action=QAction('恢复默认'),
-            func=self.video_rotate.rotate_reset
+            func=video_rotate.rotate_reset
         )
 
         video_rotate_left_act: MenuAction = MenuAction(
@@ -142,7 +133,7 @@ class SMPVPlayer(QObject):
                                     color=ICON_COLOR['color'],
                                     color_active=ICON_COLOR['active']),
                            '向左90°'),
-            func=self.video_rotate.rotate_left
+            func=video_rotate.rotate_left
         )
 
         video_rotate_right_act: MenuAction = MenuAction(
@@ -151,7 +142,7 @@ class SMPVPlayer(QObject):
                                     color=ICON_COLOR['color'],
                                     color_active=ICON_COLOR['active']),
                            '向右90°'),
-            func=self.video_rotate.rotate_right
+            func=video_rotate.rotate_right
         )
 
         open_in_explorer_act: MenuAction = MenuAction(
@@ -194,6 +185,14 @@ class SMPVPlayer(QObject):
         pop_menu.addAction(self.menu_actions['open_local_file_act'].action)
         pop_menu.addAction(self.menu_actions['add_local_file_act'].action)
 
+        # 播放列表
+        play_list_menu = QMenu('播放列表')
+        play_list_menu.setIcon(qta.icon('mdi.playlist-music-outline',
+                                           color=ICON_COLOR['color'],
+                                           color_active=ICON_COLOR['active']))
+        play_list_menu.aboutToShow.connect(partial(self._show_playlist_submenu, parent=play_list_menu))
+        pop_menu.addMenu(play_list_menu)
+
         # 画面比例
         video_aspect_menu = QMenu('画面比例')
         video_aspect_menu.setIcon(qta.icon('mdi.aspect-ratio',
@@ -209,6 +208,7 @@ class SMPVPlayer(QObject):
                                            color_active=ICON_COLOR['active']))
         pop_menu.addMenu(video_rotate_menu)
         video_rotate_menu.addAction(self.menu_actions['video_rotate_default_act'].action)
+        video_rotate_menu.addSeparator()
         video_rotate_menu.addAction(self.menu_actions['video_rotate_left_act'].action)
         video_rotate_menu.addAction(self.menu_actions['video_rotate_right_act'].action)
 
@@ -236,7 +236,7 @@ class SMPVPlayer(QObject):
 
         player = SMPV(
             event_object=self,
-            ytdl=True,
+            ytdl=False,
             player_operation_mode='pseudo-gui',
             autofit='70%',
             input_default_bindings=True,
@@ -247,6 +247,8 @@ class SMPVPlayer(QObject):
             config='yes',
             border=False,
             osd_bar=False,
+            #msg_level='cplayer=debug',
+            terminal=True,
             osc=False)
 
         @player.message_handler('show-menu')
@@ -285,6 +287,24 @@ class SMPVPlayer(QObject):
         for action_name in deleted:
             del self.menu_actions[action_name]
 
+    def _show_playlist_submenu(self, parent: QMenu):
+        from gxbzys.smpv import PlayList
+        self._clear_submenu(parent, 'select_playlist_')
+        parent.setToolTipsVisible(True)
+        parent.setToolTipDuration(1500)
+        playlist = PlayList(self.player).get_playlist()
+        for playlist_file in playlist:
+            action_icon = qta.icon('fa.play-circle-o', color=ICON_COLOR['color']) if playlist_file.current else QIcon()
+            action: MenuAction = MenuAction(
+                name='select_playlist_' + playlist_file.get_display_name() + '_act',
+                action=QAction(action_icon, playlist_file.get_display_name()),
+                func=playlist_file.select,
+                data=playlist_file
+            )
+            self.menu_actions[action.name] = action
+            action.action.setToolTip(playlist_file.file_path)
+            parent.addAction(action.action)
+
     def _show_aspect_submenu(self, parent: QMenu):
         self._clear_submenu(parent)
         is_video_ready = self.video_aspect.is_video_ready()
@@ -297,9 +317,17 @@ class SMPVPlayer(QObject):
                 current_aspect = self.video_aspect.predefined[aspect_index]
 
         for name, action in self.menu_actions.items():
+
+            if name == 'video_aspect_default_act':
+                parent.addAction(action.action)
+                parent.addSeparator()
+                continue
+
             if name.startswith('video_aspect_'):
                 if is_video_ready:
-                    if current_aspect is not None and action.data is not None:
+                    if current_aspect is None:
+                        action.action.setIcon(qta.icon('fa.square-o', color=ICON_COLOR['color']))
+                    elif action.data is not None:
                         aspect: VideoAspect = action.data
                         if aspect.get_option_value() == current_aspect.get_option_value():
                             action.action.setIcon(qta.icon('fa.check', color=ICON_COLOR['color']))
@@ -309,9 +337,8 @@ class SMPVPlayer(QObject):
 
     def _show_select_audio_track_submenu(self, parent: QMenu):
         self._clear_submenu(parent, 'select_audio_track_')
-        tracks = self.audio_tracks.get_tracks()
+        tracks = Tracks(self.player, 'audio').get_tracks()
         for track in tracks:
-            print('selected:' + str(track.selected), ' id ', str(track.id), ': ', track.get_display_name())
             icon_name = 'fa.check' if track.selected  else 'fa.square-o'
             action: MenuAction = MenuAction(
                 name='select_audio_track_' + track.get_display_name() + '_act',
@@ -342,9 +369,12 @@ class SMPVPlayer(QObject):
         self.menu_actions[action.name] = action
         parent.addAction(action.action)
 
-        tracks = self.sub_tracks.get_tracks()
+        tracks = Tracks(self.player, 'sub').get_tracks()
+
+        if len(tracks) > 0:
+            parent.addSeparator()
+
         for track in tracks:
-            print('[sub]selected:' + str(track.selected), ' id ', str(track.id), ': ', track.get_display_name())
             icon_name = 'fa.check' if track.selected else 'fa.square-o'
             action: MenuAction = MenuAction(
                 name='select_sub_' + track.get_display_name() + '_act',
