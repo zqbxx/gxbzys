@@ -6,10 +6,11 @@ from pathlib import Path
 from typing import List, Callable, Dict
 from urllib.parse import urlparse
 
+import PySide2
 import qtawesome as qta
-from PySide2.QtCore import QObject, QMutex, QEvent, Qt
-from PySide2.QtGui import QCursor, QIcon
-from PySide2.QtWidgets import QApplication, QMessageBox, QAction, QMenu, QFileDialog
+from PySide2.QtCore import QObject, QMutex, QEvent, Qt, QMimeData, QPoint, QSize, Signal
+from PySide2.QtGui import QCursor, QIcon, QDrag, QPixmap, QDragMoveEvent, QDropEvent
+from PySide2.QtWidgets import QApplication, QMessageBox, QAction, QMenu, QFileDialog, QLabel, QWidget, QHBoxLayout
 
 from gxbzys.dialogs import KeyMgrDialog
 from gxbzys.smpv import MpvEventType, MpvCryptoEvent, CryptoType, SMPV, VideoAspects, VideoAspect, VideoRotate, \
@@ -154,6 +155,15 @@ class SMPVPlayer(QObject):
             func=self._open_in_explorer
         )
 
+        clear_playlist_act: MenuAction = MenuAction(
+            name='clear_playlist_act',
+            action=QAction(qta.icon('mdi.playlist-remove',
+                                    color=ICON_COLOR['color'],
+                                    color_active=ICON_COLOR['active']),
+                           '清空播放列表'),
+            func=lambda: self.player.playlist_clear()
+        )
+
         actions = {
             open_local_file_act.name: open_local_file_act,
             add_local_file_act.name: add_local_file_act,
@@ -162,7 +172,8 @@ class SMPVPlayer(QObject):
             video_rotate_default_act.name: video_rotate_default_act,
             video_rotate_left_act.name: video_rotate_left_act,
             video_rotate_right_act.name: video_rotate_right_act,
-            open_in_explorer_act.name: open_in_explorer_act
+            open_in_explorer_act.name: open_in_explorer_act,
+            clear_playlist_act.name: clear_playlist_act
         }
 
         predefined = self.video_aspect.predefined
@@ -183,14 +194,19 @@ class SMPVPlayer(QObject):
         pop_menu = QMenu()
         pop_menu.setContextMenuPolicy(Qt.CustomContextMenu)
         pop_menu.addAction(self.menu_actions['open_local_file_act'].action)
-        pop_menu.addAction(self.menu_actions['add_local_file_act'].action)
 
         # 播放列表
-        play_list_menu = QMenu('播放列表')
+        play_list_menu = QDraggableMenu('播放列表')
+        play_list_menu.root_menu = pop_menu
+        play_list_menu.setAcceptDrops(True)
         play_list_menu.setIcon(qta.icon('mdi.playlist-music-outline',
                                            color=ICON_COLOR['color'],
                                            color_active=ICON_COLOR['active']))
+        play_list_menu.icon_on_drag_hover = qta.icon('mdi.arrow-top-right-bold-outline',
+                                           color=ICON_COLOR['color'],
+                                           color_active=ICON_COLOR['active'])
         play_list_menu.aboutToShow.connect(partial(self._show_playlist_submenu, parent=play_list_menu))
+        play_list_menu.drop_done.connect(self._move_playlist_file)
         pop_menu.addMenu(play_list_menu)
 
         # 画面比例
@@ -272,6 +288,10 @@ class SMPVPlayer(QObject):
     def _show_menu(self):
         pop_menu = self._create_menus()
         selected_action = pop_menu.exec_(QCursor.pos())
+        if selected_action is None and hasattr(pop_menu, '_selected_action'):
+            selected_action = pop_menu._selected_action
+        if selected_action is None:
+            return
         for name, menu_action in self.menu_actions.items():
             if menu_action.action == selected_action:
                 menu_action.func()
@@ -293,17 +313,35 @@ class SMPVPlayer(QObject):
         parent.setToolTipsVisible(True)
         parent.setToolTipDuration(1500)
         playlist = PlayList(self.player).get_playlist()
+        parent.addAction(self.menu_actions['add_local_file_act'].action)
+        if len(playlist) > 0:
+            parent.addAction(self.menu_actions['clear_playlist_act'].action)
+            parent.addSeparator()
+
         for playlist_file in playlist:
-            action_icon = qta.icon('fa.play-circle-o', color=ICON_COLOR['color']) if playlist_file.current else QIcon()
+            action_icon = QIcon()
+
+            if playlist_file.playing:
+                action_icon = qta.icon('fa.play-circle-o', color=ICON_COLOR['color'])
+            elif playlist_file.current:
+                action_icon = qta.icon('fa.pause-circle-o', color=ICON_COLOR['color'])
+
             action: MenuAction = MenuAction(
                 name='select_playlist_' + playlist_file.get_display_name() + '_act',
                 action=QAction(action_icon, playlist_file.get_display_name()),
                 func=playlist_file.select,
                 data=playlist_file
             )
+            action.action.setData(playlist_file)
             self.menu_actions[action.name] = action
             action.action.setToolTip(playlist_file.file_path)
             parent.addAction(action.action)
+
+    def _move_playlist_file(self, source:QAction, target: QAction, parent:QMenu):
+        if target.data() is None:
+            return
+        self.player.playlist_move(source.data().index, target.data().index)
+        parent.insertAction(target, source)
 
     def _show_aspect_submenu(self, parent: QMenu):
         self._clear_submenu(parent)
@@ -475,3 +513,127 @@ class MenuAction:
         self.action = action
         self.func = func
         self.data = data
+
+
+class IconLabel(QWidget):
+    IconSize = QSize(16, 16)
+    HorizontalSpacing = 2
+
+    def __init__(self, icon: QIcon, text, final_stretch=True):
+        super().__init__()
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.setLayout(layout)
+        label = QLabel()
+        label.setPixmap(icon.pixmap(self.IconSize))
+        layout.addWidget(label)
+        layout.addSpacing(self.HorizontalSpacing)
+        layout.addWidget(QLabel(text))
+        if final_stretch:
+            layout.addStretch()
+
+
+class QDraggableMenu(QMenu):
+
+    drop_done = Signal(QAction, QAction, QMenu)
+
+    def defaultDropDone(self, source: QAction, target: QAction, parent: QMenu):
+        parent.insertAction(target, source)
+
+    def mousePressEvent(self, event: PySide2.QtGui.QMouseEvent) -> None:
+        super().mousePressEvent(event)
+        self.source_action = self.activeAction()
+        if self.source_action is not None:
+            drag = QDrag(self.source_action)
+            t_menu = QMenu(self.source_action.text())
+            t_menu.setIcon(self.source_action.icon())
+            label = IconLabel(self.source_action.icon(), self.source_action.text())
+            drag.setPixmap(QPixmap.grabWidget(label))
+            drag.setHotSpot(QPoint(5, 5))
+            mimedata = QMimeData()
+            mimedata.setText(self.source_action.text())
+            drag.setMimeData(mimedata)
+            drag.exec_()
+
+    def mouseReleaseEvent(self, event: PySide2.QtGui.QMouseEvent) -> None:
+        # 触发keypress以后如果没有触发dragMoveEvent则mouseReleaseEvent不会触发
+        # 全部放到dropEvent中处理
+        pass
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasFormat('text/plain'):
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event: QDragMoveEvent):
+        if not hasattr(self, 'last_hover_action'):
+            self.last_hover_action = None
+            self.last_hover_action_icon = None
+        action: QAction = self.actionAt(event.pos())
+        print(f'self.source_action == action: {self.source_action == action}')
+        if self.source_action == action:
+            self.is_in_drop_status = False
+            return
+
+        if action is not None:
+            self.is_in_drop_status = True
+            if self.last_hover_action is not None:
+                self.last_hover_action.setIcon(self.last_hover_action_icon)
+            self.last_hover_action = action
+            self.last_hover_action_icon = action.icon()
+            if self.icon_on_drag_hover is not None:
+                action.setIcon(self.icon_on_drag_hover)
+
+    def dropEvent(self, event: QDropEvent):
+        if not self.is_in_drop_status:
+            action = self.actionAt(event.pos())
+            self.root_menu._selected_action = action
+            self.root_menu.close()
+            return
+
+        if self.last_hover_action is not None:
+            self.last_hover_action.setIcon(self.last_hover_action_icon)
+        action = self.actionAt(event.pos())
+        if self.source_action is not None and self.source_action != action:
+            self.drop_done.emit(self.source_action, action, self)
+
+        self.is_in_drop_status = False
+
+    @property
+    def last_hover_action_icon(self) -> QIcon:
+        if not hasattr(self, '_last_hover_action_icon'):
+            return None
+        return self._last_hover_action_icon
+
+    @last_hover_action_icon.setter
+    def last_hover_action_icon(self, last_hover_action_icon: QIcon):
+        self._last_hover_action_icon = last_hover_action_icon
+
+    @property
+    def last_hover_action(self) -> QAction:
+        if not hasattr(self, '_last_hover_action'):
+            return None
+        return self._last_hover_action
+
+    @last_hover_action.setter
+    def last_hover_action(self, last_hover_action:QAction):
+        self._last_hover_action = last_hover_action
+
+    @property
+    def root_menu(self) -> QMenu:
+        return self._root_menu
+
+    @root_menu.setter
+    def root_menu(self, root_menu: QMenu):
+        self._root_menu = root_menu
+
+    @property
+    def icon_on_drag_hover(self) -> QIcon:
+        if not hasattr(self, '_icon_on_drag_hover'):
+            return None
+        return self._icon_on_drag_hover
+
+    @icon_on_drag_hover.setter
+    def icon_on_drag_hover(self, icon_on_drag_hover: QIcon):
+        self._icon_on_drag_hover = icon_on_drag_hover
