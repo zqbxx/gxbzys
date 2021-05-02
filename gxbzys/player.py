@@ -1,9 +1,10 @@
+import functools
 import os
 import threading
 import time
 from functools import partial
 from pathlib import Path
-from typing import List, Callable, Dict
+from typing import List, Callable, Dict, TypeVar
 from urllib.parse import urlparse
 
 import PySide2
@@ -14,8 +15,11 @@ from PySide2.QtWidgets import QApplication, QMessageBox, QAction, QMenu, QFileDi
 
 from gxbzys.dialogs import KeyMgrDialog
 from gxbzys.smpv import MpvEventType, MpvCryptoEvent, CryptoType, SMPV, VideoAspects, VideoAspect, VideoRotate, \
-    Tracks
+    Tracks, PlayList, PlayListFile
 from keymanager.utils import ICON_COLOR
+
+
+MenuActionType = TypeVar("MenuActionType", bound="MenuAction")
 
 
 class SMPVPlayer(QObject):
@@ -35,6 +39,8 @@ class SMPVPlayer(QObject):
 
         self.player = self._create_player()
         self.video_aspect = self._create_aspect()
+
+        self.current_playlist_file = None
 
         self.menu_actions: Dict[str, MenuAction] = self._build_menu_actions()
         self._install_key_bindings()
@@ -92,100 +98,161 @@ class SMPVPlayer(QObject):
         return video_aspect
 
     def _build_menu_actions(self):
-        open_local_file_act: MenuAction = MenuAction(
+
+        actions: Dict[str, MenuAction] = {}
+
+        MenuAction(
             name='open_local_file_act',
             action=QAction(qta.icon('ei.file-new',
                                     color=ICON_COLOR['color'],
                                     color_active=ICON_COLOR['active']),
                            '打开文件'),
-            func=self._open_local_file)
+            func=self._open_local_file,
+        ).append_to(actions)
 
-        add_local_file_act: MenuAction = MenuAction(
+        MenuAction(
             name='add_local_file_act',
             action=QAction(qta.icon('mdi.playlist-plus',
                                     color=ICON_COLOR['color'],
                                     color_active=ICON_COLOR['active']),
                            '添加文件'),
-            func=self._add_local_file_act)
+            func=self._add_local_file_act,
+        ).append_to(actions)
+        MenuAction(
+            name='save_playlist_act',
+            action=QAction(qta.icon('fa.save',
+                                    color=ICON_COLOR['color'],
+                                    color_active=ICON_COLOR['active']),
+                           '保存播放列表'),
+            func=self._save_playlist_act,
+        ).append_to(actions)
+        MenuAction(
+            name='open_playlist_act',
+            action=QAction(qta.icon('fa.folder-open-o',
+                                    color=ICON_COLOR['color'],
+                                    color_active=ICON_COLOR['active']),
+                           '打开播放列表'),
+            func=self._open_playlist_act,
+        ).append_to(actions)
+        MenuAction(
+            name='save_playlist_as_act',
+            action=QAction(qta.icon('fa.folder-open-o',
+                                    color=ICON_COLOR['color'],
+                                    color_active=ICON_COLOR['active']),
+                           '播放列表另存为'),
+            func=partial(self._save_playlist_act, save_as=True),
+        ).append_to(actions)
 
-        open_key_mgr_act: MenuAction = MenuAction(
+        def compare_playlist_create_date(a: PlayListFile, b: PlayListFile):
+            a_t = os.stat(a.file_path).st_ctime
+            b_t = os.stat(b.file_path).st_ctime
+            return a_t - b_t
+
+        def compare_playlist_name(a: PlayListFile, b: PlayListFile):
+            result = 0
+            if a.file_path > b.file_path:
+                result = 1
+            elif a.file_path < b.file_path:
+                result = -1
+            return result
+
+        MenuAction(
+            name='sort_playlist_by_name_act',
+            action=QAction(qta.icon('fa.sort-alpha-asc',
+                                    color=ICON_COLOR['color'],
+                                    color_active=ICON_COLOR['active']),
+                           '按名称排序'),
+            func=partial(self._sort_playlist, comp_func=compare_playlist_name, reverse=False),
+        ).append_to(actions)
+        MenuAction(
+            name='sort_playlist_by_name_desc_act',
+            action=QAction(qta.icon('fa.sort-alpha-desc',
+                                    color=ICON_COLOR['color'],
+                                    color_active=ICON_COLOR['active']),
+                           '按名称排序（倒序）'),
+            func=partial(self._sort_playlist, comp_func=compare_playlist_name, reverse=True),
+        ).append_to(actions)
+        MenuAction(
+            name='sort_playlist_by_time_act',
+            action=QAction(qta.icon('mdi.sort-calendar-ascending',
+                                    color=ICON_COLOR['color'],
+                                    color_active=ICON_COLOR['active']),
+                           '按时间排序（新的在前）'),
+            func=partial(self._sort_playlist, comp_func=compare_playlist_create_date, reverse=False),
+        ).append_to(actions)
+        MenuAction(
+            name='sort_playlist_by_time_desc_act',
+            action=QAction(qta.icon('mdi.sort-calendar-descending',
+                                    color=ICON_COLOR['color'],
+                                    color_active=ICON_COLOR['active']),
+                           '按时间排序（旧的在前）'),
+            func=partial(self._sort_playlist, comp_func=compare_playlist_create_date, reverse=True),
+        ).append_to(actions)
+
+        MenuAction(
             name='open_key_mgr_act',
             action=QAction(qta.icon('fa5s.key',
                                     color=ICON_COLOR['color'],
                                     color_active=ICON_COLOR['active']),
                            '密钥管理'),
-            func=self.key_mgr_dialog.active_exec)
+            func=self.key_mgr_dialog.active_exec,
+        ).append_to(actions)
 
-        video_aspect_default_act: MenuAction = MenuAction(
+        video_rotate = VideoRotate(self.player)
+        MenuAction(
             name='video_aspect_default_act',
             action=QAction('默认比例'),
-            func=lambda: self.player.set_option('video-aspect-override', 'no')
-        )
-        video_rotate = VideoRotate(self.player)
-        video_rotate_default_act: MenuAction = MenuAction(
+            func=lambda: self.player.set_option('video-aspect-override', 'no'),
+        ).append_to(actions)
+        MenuAction(
             name='video_rotate_default_act',
             action=QAction('恢复默认'),
-            func=video_rotate.rotate_reset
-        )
-
-        video_rotate_left_act: MenuAction = MenuAction(
+            func=video_rotate.rotate_reset,
+        ).append_to(actions)
+        MenuAction(
             name='video_rotate_left_act',
             action=QAction(qta.icon('fa.rotate-left',
                                     color=ICON_COLOR['color'],
                                     color_active=ICON_COLOR['active']),
                            '向左90°'),
-            func=video_rotate.rotate_left
-        )
-
-        video_rotate_right_act: MenuAction = MenuAction(
+            func=video_rotate.rotate_left,
+        ).append_to(actions)
+        MenuAction(
             name='video_rotate_right_act',
             action=QAction(qta.icon('fa.rotate-right',
                                     color=ICON_COLOR['color'],
                                     color_active=ICON_COLOR['active']),
                            '向右90°'),
-            func=video_rotate.rotate_right
-        )
+            func=video_rotate.rotate_right,
+        ).append_to(actions)
 
-        open_in_explorer_act: MenuAction = MenuAction(
+        MenuAction(
             name='open_in_explorer_act',
             action=QAction(qta.icon('fa.folder-open-o',
                                     color=ICON_COLOR['color'],
                                     color_active=ICON_COLOR['active']),
                            '在文件夹中打开'),
-            func=self._open_in_explorer
-        )
+            func=self._open_in_explorer,
+        ).append_to(actions)
 
-        clear_playlist_act: MenuAction = MenuAction(
+        MenuAction(
             name='clear_playlist_act',
             action=QAction(qta.icon('mdi.playlist-remove',
                                     color=ICON_COLOR['color'],
                                     color_active=ICON_COLOR['active']),
                            '清空播放列表'),
-            func=lambda: self.player.playlist_clear()
-        )
-
-        actions = {
-            open_local_file_act.name: open_local_file_act,
-            add_local_file_act.name: add_local_file_act,
-            open_key_mgr_act.name: open_key_mgr_act,
-            video_aspect_default_act.name: video_aspect_default_act,
-            video_rotate_default_act.name: video_rotate_default_act,
-            video_rotate_left_act.name: video_rotate_left_act,
-            video_rotate_right_act.name: video_rotate_right_act,
-            open_in_explorer_act.name: open_in_explorer_act,
-            clear_playlist_act.name: clear_playlist_act
-        }
+            func=lambda: self.player.playlist_clear(),
+        ).append_to(actions)
 
         predefined = self.video_aspect.predefined
         for video_aspect in predefined:
-            action: MenuAction = MenuAction(
+            MenuAction(
                 name='video_aspect_' + video_aspect.get_display_name() + '_act',
                 action=QAction(qta.icon('fa.square-o', color=ICON_COLOR['color']),
                                video_aspect.get_display_name()),
                 func=video_aspect.set_video_aspect,
                 data=video_aspect
-            )
-            actions[action.name] = action
+            ).append_to(actions)
 
         return actions
 
@@ -207,6 +274,11 @@ class SMPVPlayer(QObject):
                                            color_active=ICON_COLOR['active'])
         play_list_menu.aboutToShow.connect(partial(self._show_playlist_submenu, parent=play_list_menu))
         play_list_menu.drop_done.connect(self._move_playlist_file)
+
+        def is_support_drag(action:QAction) -> bool:
+            return action.data() is not None
+
+        play_list_menu.action_support_drag = is_support_drag
         pop_menu.addMenu(play_list_menu)
 
         # 画面比例
@@ -314,8 +386,29 @@ class SMPVPlayer(QObject):
         parent.setToolTipDuration(1500)
         playlist = PlayList(self.player).get_playlist()
         parent.addAction(self.menu_actions['add_local_file_act'].action)
+        parent.addAction(self.menu_actions['open_playlist_act'].action)
         if len(playlist) > 0:
+            need_reset = True
+            if self.current_playlist_file is not None:
+                p = Path(self.current_playlist_file)
+                if p.exists() and p.is_file():
+                    self.menu_actions['save_playlist_act'].action.setText('保存到 ' + p.name)
+                    self.menu_actions['save_playlist_act'].action.setToolTip(self.current_playlist_file)
+                    need_reset = False
+            if need_reset:
+                self.menu_actions['save_playlist_act'].action.setText('保存播放列表')
+                self.menu_actions['save_playlist_act'].action.setToolTip('')
+
+            parent.addAction(self.menu_actions['save_playlist_act'].action)
+            parent.addAction(self.menu_actions['save_playlist_as_act'].action)
             parent.addAction(self.menu_actions['clear_playlist_act'].action)
+            sort_menu = QMenu('排序')
+            sort_menu.setIcon(qta.icon('mdi.sort', color=ICON_COLOR['color']))
+            sort_menu.addAction(self.menu_actions['sort_playlist_by_name_act'].action)
+            sort_menu.addAction(self.menu_actions['sort_playlist_by_name_desc_act'].action)
+            sort_menu.addAction(self.menu_actions['sort_playlist_by_time_act'].action)
+            sort_menu.addAction(self.menu_actions['sort_playlist_by_time_desc_act'].action)
+            parent.addMenu(sort_menu)
             parent.addSeparator()
 
         for playlist_file in playlist:
@@ -333,12 +426,14 @@ class SMPVPlayer(QObject):
                 data=playlist_file
             )
             action.action.setData(playlist_file)
-            self.menu_actions[action.name] = action
             action.action.setToolTip(playlist_file.file_path)
+            action.append_to(self.menu_actions)
             parent.addAction(action.action)
 
     def _move_playlist_file(self, source:QAction, target: QAction, parent:QMenu):
         if target.data() is None:
+            return
+        if source.data() is None:
             return
         self.player.playlist_move(source.data().index, target.data().index)
         parent.insertAction(target, source)
@@ -378,34 +473,31 @@ class SMPVPlayer(QObject):
         tracks = Tracks(self.player, 'audio').get_tracks()
         for track in tracks:
             icon_name = 'fa.check' if track.selected  else 'fa.square-o'
-            action: MenuAction = MenuAction(
-                name='select_audio_track_' + track.get_display_name() + '_act',
-                action=QAction(qta.icon(icon_name, color=ICON_COLOR['color']),
-                               track.get_display_name()),
-                func=track.select,
-                data=track
-            )
-            self.menu_actions[action.name] = action
-            parent.addAction(action.action)
+            parent.addAction(
+                MenuAction(
+                    name='select_audio_track_' + track.get_display_name() + '_act',
+                    action=QAction(qta.icon(icon_name, color=ICON_COLOR['color']),
+                                   track.get_display_name()),
+                    func=track.select,
+                    data=track
+                ).append_to(self.menu_actions).action)
 
     def _show_select_sub_submenu(self, parent: QMenu):
         self._clear_submenu(parent, 'select_sub_')
 
-        action: MenuAction = MenuAction(
-            name='select_sub_load_external_sub_act',
-            action=QAction('加载外挂字幕'),
-            func=self._load_external_sub
-        )
-        self.menu_actions[action.name] = action
-        parent.addAction(action.action)
+        parent.addAction(
+            MenuAction(
+                name='select_sub_load_external_sub_act',
+                action=QAction('加载外挂字幕'),
+                func=self._load_external_sub
+            ).append_to(self.menu_actions).action)
 
-        action: MenuAction = MenuAction(
-            name='select_sub_no_act',
-            action=QAction('禁用字幕'),
-            func=lambda : self.player.set_option('sid', 'no')
-        )
-        self.menu_actions[action.name] = action
-        parent.addAction(action.action)
+        parent.addAction(
+            MenuAction(
+                name='select_sub_no_act',
+                action=QAction('禁用字幕'),
+                func=lambda : self.player.set_option('sid', 'no')
+            ).append_to(self.menu_actions).action)
 
         tracks = Tracks(self.player, 'sub').get_tracks()
 
@@ -414,41 +506,89 @@ class SMPVPlayer(QObject):
 
         for track in tracks:
             icon_name = 'fa.check' if track.selected else 'fa.square-o'
-            action: MenuAction = MenuAction(
-                name='select_sub_' + track.get_display_name() + '_act',
-                action=QAction(qta.icon(icon_name, color=ICON_COLOR['color']),
-                               track.get_display_name()),
-                func=track.select,
-                data=track
-            )
-            self.menu_actions[action.name] = action
-            parent.addAction(action.action)
+            parent.addAction(
+                MenuAction(
+                    name='select_sub_' + track.get_display_name() + '_act',
+                    action=QAction(qta.icon(icon_name, color=ICON_COLOR['color']),
+                                   track.get_display_name()),
+                    func=track.select,
+                    data=track
+                ).append_to(self.menu_actions).action)
 
     def _open_local_file(self):
         file_list, ok = QFileDialog.getOpenFileNames(
             parent=self.key_mgr_dialog,
             caption="Open file",
-            directory="",
-            filter="mkv Video (*.mkv);;mp4 Video (*.mp4);;Movie files (*.mov);;All files (*.*)",
+            dir="",
+            filter="视频文件 (*.mkv *.mp4 *.mov);;mp4 Video (*.mp4);;Movie files (*.mov);;All files (*.*)",
         )
-        print(ok)
-        if len(file_list) > 0:
-            self.player.playlist_clear()
-            for f in file_list:
-                self.player.playlist_append(f)
-            self.player.playlist_pos = 0
+        if ok:
+            if len(file_list) > 0:
+                self.player.stop()
+                self.player.playlist_clear()
+                self.current_playlist_file = None
+                for f in file_list:
+                    self.player.playlist_append(f)
+                self.player.playlist_pos = 0
 
     def _add_local_file_act(self):
         file_list, ok = QFileDialog.getOpenFileNames(
             parent=self.key_mgr_dialog,
             caption="Open file",
-            directory="",
-            filter="mkv Video (*.mkv);;mp4 Video (*.mp4);;Movie files (*.mov);;All files (*.*)",
+            dir="",
+            filter="视频文件 (*.mkv *.mp4 *.mov);;mp4 Video (*.mp4);;Movie files (*.mov);;All files (*.*)",
         )
         print(ok)
         if len(file_list) > 0:
             for f in file_list:
                 self.player.playlist_append(f)
+
+    def _save_playlist_act(self, save_as=False):
+
+        if self.current_playlist_file is None or save_as:
+            file_name, ok = QFileDialog.getSaveFileName(
+                parent=self.key_mgr_dialog,
+                caption="保存播放列表",
+                dir='.',
+                filter="播放列表 (*.gxpl)"
+            )
+            if not ok:
+                return
+            self.current_playlist_file = file_name
+
+        playlist_file = Path(self.current_playlist_file)
+
+        try:
+            PlayList(self.player).save_to_file(playlist_file)
+        except Exception as e:
+            QMessageBox.critical(self, "保存失败", str(e))
+
+    def _open_playlist_act(self):
+        file_name, ok = QFileDialog.getOpenFileName(
+            parent=self.key_mgr_dialog,
+            caption="打开播放列表",
+            dir='.',
+            filter="播放列表 (*.gxpl)")
+        if ok:
+            try:
+                PlayList(self.player).load_from_file(file_name)
+                self.current_playlist_file = file_name
+            except Exception as e:
+                QMessageBox.critical(self, "保存失败", str(e))
+
+    def _sort_playlist(self, comp_func: Callable[[PlayListFile, PlayListFile], int], reverse=False):
+        p = PlayList(self.player)
+        playlist: List[PlayListFile] = p.get_playlist()
+        length = len(playlist)
+        for index in range(length):
+            for j in range(1, length - index):
+                result = comp_func(playlist[j - 1], playlist[j])
+                if reverse:
+                    result = -result
+                if result > 0:
+                    self.player.playlist_move(j, j - 1)
+                    playlist[j - 1], playlist[j] = playlist[j], playlist[j - 1]
+        return playlist
 
     def _open_key_mgr(self):
         self.key_mgr_dialog.active_exec()
@@ -508,11 +648,15 @@ class MenuAction:
                  name: str,
                  action: QAction,
                  func: Callable,
-                 data=None):
+                 data=None,):
         self.name = name
         self.action = action
         self.func = func
         self.data = data
+
+    def append_to(self, actions: Dict[str, MenuActionType]) -> MenuActionType:
+        actions[self.name] = self
+        return self
 
 
 class IconLabel(QWidget):
@@ -543,7 +687,7 @@ class QDraggableMenu(QMenu):
     def mousePressEvent(self, event: PySide2.QtGui.QMouseEvent) -> None:
         super().mousePressEvent(event)
         self.source_action = self.activeAction()
-        if self.source_action is not None:
+        if self.source_action is not None and self.action_support_drag(self.source_action):
             drag = QDrag(self.source_action)
             t_menu = QMenu(self.source_action.text())
             t_menu.setIcon(self.source_action.icon())
@@ -558,7 +702,9 @@ class QDraggableMenu(QMenu):
     def mouseReleaseEvent(self, event: PySide2.QtGui.QMouseEvent) -> None:
         # 触发keypress以后如果没有触发dragMoveEvent则mouseReleaseEvent不会触发
         # 全部放到dropEvent中处理
-        pass
+
+        if self.source_action is None or not self.action_support_drag(self.source_action):
+            super().mouseReleaseEvent(event)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasFormat('text/plain'):
@@ -576,7 +722,7 @@ class QDraggableMenu(QMenu):
             self.is_in_drop_status = False
             return
 
-        if action is not None:
+        if action is not None and self.action_support_drag(action):
             self.is_in_drop_status = True
             if self.last_hover_action is not None:
                 self.last_hover_action.setIcon(self.last_hover_action_icon)
@@ -599,6 +745,29 @@ class QDraggableMenu(QMenu):
             self.drop_done.emit(self.source_action, action, self)
 
         self.is_in_drop_status = False
+
+
+    @property
+    def source_action(self) -> QAction:
+        if not hasattr(self, '_source_action'):
+            return None
+        return self._source_action
+
+    @source_action.setter
+    def source_action(self, source_action: QAction):
+        self._source_action = source_action
+
+    @property
+    def action_support_drag(self)-> Callable[[QAction], bool]:
+        def default_true(action: QAction)->bool:
+            return True
+        if not hasattr(self, '_action_support_drag'):
+            return default_true
+        return self._action_support_drag
+
+    @action_support_drag.setter
+    def action_support_drag(self, action_support_drag: Callable[[QAction], bool]):
+        self._action_support_drag = action_support_drag
 
     @property
     def last_hover_action_icon(self) -> QIcon:

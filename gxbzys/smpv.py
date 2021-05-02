@@ -1,9 +1,9 @@
-
+import json
 import platform
 from math import isclose
 from enum import Enum
 from pathlib import Path
-from typing import List
+from typing import List, Dict
 from urllib.parse import urlparse
 
 from PySide2.QtCore import QEvent, QObject
@@ -293,13 +293,14 @@ class Tracks:
 
 class PlayListFile:
 
-    def __init__(self, id, file_path, current, playing, index: int, mpv: SMPV):
+    def __init__(self, id, file_path, current, playing, index: int, mpv: SMPV, time_pos=-1):
         self.file_path = file_path
         self.current = current
         self.playing = playing
         self.id = id
         self.mpv = mpv
         self.index = index
+        self.time_pos = time_pos
 
     def get_display_name(self):
         file_name = Path(self.file_path).name
@@ -308,9 +309,12 @@ class PlayListFile:
         return file_name
 
     def select(self):
-        if self.current:
+        if self.playing:
             return
         self.mpv.playlist_pos = str(self.index)
+        if self.current and not self.playing and self.time_pos > 0:
+            self.mpv.time_pos = self.time_pos
+            self.time_pos = -1
 
 
 class PlayList:
@@ -331,3 +335,62 @@ class PlayList:
             )
             play_list_files.append(f)
         return play_list_files
+
+    def load_from_file(self, file_path) -> List[PlayListFile]:
+
+        file = Path(file_path)
+        if not file.is_file():
+            return []
+        file_text = file.read_text(encoding='utf-8-sig')
+        file_content: Dict = json.loads(file_text)
+
+        if 'playlist' not in file_content:
+            return []
+        playlist:List[str] = file_content['playlist']
+        for f in playlist:
+            if Path(f).is_file():
+                self.mpv.playlist_append(f)
+
+        current_file = None
+        if 'current_file' in file_content:
+            current_file = file_content['current_file']
+
+        time_pos = -1
+        if 'time_pos' in file_content:
+            time_pos = file_content['time_pos']
+
+        if current_file is not None:
+            current_file_path = Path(current_file)
+            mpv_playlist = self.get_playlist()
+            for i, f in enumerate(mpv_playlist):
+                if current_file_path.samefile(Path(f.file_path)):
+                    f.current = True
+                    f.time_pos = time_pos
+                    self.mpv.playlist_pos = i
+                    break
+
+        return mpv_playlist
+
+    def save_to_file(self, file_path):
+
+        mpv_playlist = self.get_playlist()
+        current_file = None
+        time_pos = -1
+        playlist:List[str] = []
+
+        for f in mpv_playlist:
+            playlist.append(f.file_path)
+            if f.playing:
+                current_file = f.file_path
+                time_pos = self.mpv.time_pos
+            elif f.current:
+                current_file = f.file_path
+                time_pos = self.mpv.time_pos
+
+        ret_dict = {}
+        ret_dict['playlist'] = playlist
+        if current_file is not None:
+            ret_dict['current_file'] = current_file
+            ret_dict['time_pos'] = time_pos
+
+        Path(file_path).write_text(json.dumps(ret_dict, ensure_ascii=False), 'utf-8')
