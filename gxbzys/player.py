@@ -39,6 +39,7 @@ class SMPVPlayer(QObject):
 
         self.player = self._create_player()
         self.video_aspect = self._create_aspect()
+        self.playlist = PlayList(self.player)
 
         self.current_playlist_file = None
 
@@ -241,7 +242,7 @@ class SMPVPlayer(QObject):
                                     color=ICON_COLOR['color'],
                                     color_active=ICON_COLOR['active']),
                            '清空播放列表'),
-            func=lambda: self.player.playlist_clear(),
+            func=self._playlist_clear,
         ).append_to(actions)
 
         predefined = self.video_aspect.predefined
@@ -344,7 +345,30 @@ class SMPVPlayer(QObject):
             event = QEvent(MpvEventType.MpvContextMenuEventType.value)
             QApplication.instance().postEvent(self, event)
 
+        def time_pos_handler(name, value):
+            if value is None:
+                return
+            self._playlist_changed()
+        player.observe_property('time-pos', time_pos_handler)
+
+        def pause_handler(name, value):
+            if value:
+                self._playlist_changed(force=True)
+        player.observe_property('pause', pause_handler)
+
+        @player.event_callback('file-loaded')
+        def _(event):
+            print('file loaded')
+            self._playlist_changed(force=True)
+
         return player
+
+    def _playlist_changed(self, force=False):
+        if self.current_playlist_file is None:
+            return
+        if not Path(self.current_playlist_file).is_file():
+            return
+        self.playlist.save_to_file(self.current_playlist_file, force=force)
 
     def _install_key_bindings(self):
         @self.player.on_key_press('ctrl+q')
@@ -380,11 +404,10 @@ class SMPVPlayer(QObject):
             del self.menu_actions[action_name]
 
     def _show_playlist_submenu(self, parent: QMenu):
-        from gxbzys.smpv import PlayList
         self._clear_submenu(parent, 'select_playlist_')
         parent.setToolTipsVisible(True)
         parent.setToolTipDuration(1500)
-        playlist = PlayList(self.player).get_playlist()
+        playlist = self.playlist.get_playlist()
         parent.addAction(self.menu_actions['add_local_file_act'].action)
         parent.addAction(self.menu_actions['open_playlist_act'].action)
         if len(playlist) > 0:
@@ -437,6 +460,7 @@ class SMPVPlayer(QObject):
             return
         self.player.playlist_move(source.data().index, target.data().index)
         parent.insertAction(target, source)
+        self._playlist_changed(force=True)
 
     def _show_aspect_submenu(self, parent: QMenu):
         self._clear_submenu(parent)
@@ -559,7 +583,7 @@ class SMPVPlayer(QObject):
         playlist_file = Path(self.current_playlist_file)
 
         try:
-            PlayList(self.player).save_to_file(playlist_file)
+            self.playlist.save_to_file(playlist_file)
         except Exception as e:
             QMessageBox.critical(self, "保存失败", str(e))
 
@@ -571,13 +595,14 @@ class SMPVPlayer(QObject):
             filter="播放列表 (*.gxpl)")
         if ok:
             try:
-                PlayList(self.player).load_from_file(file_name)
+                self.playlist.load_from_file(file_name)
                 self.current_playlist_file = file_name
+                # TODO 跳转到上次播放时间
             except Exception as e:
-                QMessageBox.critical(self, "保存失败", str(e))
+                QMessageBox.critical(self, "打开失败", str(e))
 
     def _sort_playlist(self, comp_func: Callable[[PlayListFile, PlayListFile], int], reverse=False):
-        p = PlayList(self.player)
+        p = self.playlist
         playlist: List[PlayListFile] = p.get_playlist()
         length = len(playlist)
         for index in range(length):
@@ -588,7 +613,12 @@ class SMPVPlayer(QObject):
                 if result > 0:
                     self.player.playlist_move(j, j - 1)
                     playlist[j - 1], playlist[j] = playlist[j], playlist[j - 1]
+        self._playlist_changed(force=True)
         return playlist
+
+    def _playlist_clear(self):
+        self.player.playlist_clear()
+        self.current_playlist_file = None
 
     def _open_key_mgr(self):
         self.key_mgr_dialog.active_exec()

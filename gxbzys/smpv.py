@@ -1,5 +1,6 @@
 import json
 import platform
+import time
 from math import isclose
 from enum import Enum
 from pathlib import Path
@@ -321,6 +322,7 @@ class PlayList:
 
     def __init__(self, mpv: SMPV):
         self.mpv = mpv
+        self.last_save_tm = 0
 
     def get_playlist(self) -> List[PlayListFile]:
         play_list_files: List[PlayListFile] = []
@@ -371,8 +373,14 @@ class PlayList:
 
         return mpv_playlist
 
-    def save_to_file(self, file_path):
+    def save_to_file(self, file_path, force=True):
 
+        if not force:
+            dur = time.time() - self.last_save_tm
+            if dur < 30:
+                return
+
+        self.last_save_tm = time.time()
         mpv_playlist = self.get_playlist()
         current_file = None
         time_pos = -1
