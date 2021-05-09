@@ -338,6 +338,10 @@ class PlayList:
             play_list_files.append(f)
         return play_list_files
 
+    def add_to_mpv(self, playlist_files: List[PlayListFile]):
+        for f in playlist_files:
+            self.mpv.playlist_append(f.file_path)
+
     def load_from_file(self, file_path) -> List[PlayListFile]:
 
         file = Path(file_path)
@@ -349,9 +353,6 @@ class PlayList:
         if 'playlist' not in file_content:
             return []
         playlist:List[str] = file_content['playlist']
-        for f in playlist:
-            if Path(f).is_file():
-                self.mpv.playlist_append(f)
 
         current_file = None
         if 'current_file' in file_content:
@@ -361,15 +362,28 @@ class PlayList:
         if 'time_pos' in file_content:
             time_pos = file_content['time_pos']
 
+        mpv_playlist:List[PlayListFile] = list()
         if current_file is not None:
             current_file_path = Path(current_file)
-            mpv_playlist = self.get_playlist()
-            for i, f in enumerate(mpv_playlist):
-                if current_file_path.samefile(Path(f.file_path)):
-                    f.current = True
-                    f.time_pos = time_pos
-                    self.mpv.playlist_pos = i
-                    break
+            for i, f in enumerate(playlist):
+
+                playlist_file = PlayListFile(
+                    None,
+                    f,
+                    False,
+                    False,
+                    i,
+                    self.mpv
+                )
+
+                if current_file_path.samefile(Path(f)):
+                    playlist_file.current = True
+                    playlist_file.time_pos = time_pos
+                else:
+                    playlist_file.current = False
+                    playlist_file.time_pos = -1
+
+                mpv_playlist.append(playlist_file)
 
         return mpv_playlist
 

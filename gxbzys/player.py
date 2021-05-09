@@ -151,10 +151,18 @@ class SMPVPlayer(QObject):
 
         def compare_playlist_name(a: PlayListFile, b: PlayListFile):
             result = 0
-            if a.file_path > b.file_path:
-                result = 1
-            elif a.file_path < b.file_path:
-                result = -1
+            ap = Path(a.file_path)
+            bp = Path(b.file_path)
+            if ap.parent.samefile(bp.parent):
+                if str(ap.name) > str(bp.name):
+                    result = 1
+                elif str(ap.name) < str(bp.name):
+                    result = -1
+            else:
+                if str(ap.parent.name) > str(bp.parent.name):
+                    result = 1
+                elif str(ap.parent.name) < str(bp.parent.name):
+                    result = -1
             return result
 
         MenuAction(
@@ -595,11 +603,32 @@ class SMPVPlayer(QObject):
             filter="播放列表 (*.gxpl)")
         if ok:
             try:
-                self.playlist.load_from_file(file_name)
+                if len(self.player.playlist) > 0:
+                    self.player.stop()
+                    self.player.playlist_clear()
+                playlist_files: List[PlayListFile] = self.playlist.load_from_file(file_name)
+                self.playlist.add_to_mpv(playlist_files)
+                playlist_files_in_mpv = self.playlist.get_playlist()
                 self.current_playlist_file = file_name
-                # TODO 跳转到上次播放时间
+                found = False
+                for i, f in enumerate(playlist_files):
+                    if f.current:
+                        for i_in_mpv, f_in_mpv in enumerate(playlist_files_in_mpv):
+                            if Path(f.file_path).samefile(Path(f_in_mpv.file_path)):
+                                self.player.playlist_pos = i_in_mpv
+                                try:
+                                    self.player.wait_until_playing()
+                                    self.player.command('seek', f.time_pos, 'absolute')
+                                except Exception as e:
+                                    print(str(e))
+                                found = True
+                                break
+                        break
+                if not found:
+                    self.player.playlist_pos = 0
+
             except Exception as e:
-                QMessageBox.critical(self, "打开失败", str(e))
+                QMessageBox.critical(None, "打开失败", str(e))
 
     def _sort_playlist(self, comp_func: Callable[[PlayListFile, PlayListFile], int], reverse=False):
         p = self.playlist
