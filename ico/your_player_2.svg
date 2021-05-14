@@ -1,0 +1,18 @@
+<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
+ <!-- Created with UXWing SVG Editor - https://uxwing.com/svg-icon-editor/ -->
+
+ <g>
+  <title>background</title>
+  <rect fill="none" id="canvas_background" height="597.34872" width="597.34872" y="-1" x="-1"/>
+  <g display="none" id="canvasGrid">
+   <rect fill="url(#gridpattern)" stroke-width="0" y="0" x="0" height="100%" width="100%" id="svg_3"/>
+  </g>
+ </g>
+ <g>
+  <title>Layer 1</title>
+  <rect rx="10" id="svg_5" height="290" width="512" y="111" x="0" stroke-opacity="null" stroke-width="0" stroke="#FF0000" fill="#000000"/>
+  <rect rx="15" id="svg_2" height="256" width="256" y="128" x="245.1395" stroke-opacity="null" stroke-width="0" stroke="#FF0000" fill="#ff9900"/>
+  <text font-weight="bold" transform="matrix(17.0572, 0, 0, 17.8711, -1517.4, -1779.89)" xml:space="preserve" text-anchor="start" font-family="'Courier New', Courier, monospace" font-size="24" id="svg_1" y="121.15933" x="89" stroke-width="0" stroke="#FF0000" fill="#ffffff" font-style="normal">Y</text>
+  <text transform="matrix(18.3826, 0, 0, 17.7557, -1123.45, -3820.4)" xml:space="preserve" text-anchor="start" font-family="'Courier New', Courier, monospace" font-size="24" id="svg_4" y="236.71656" x="73.96887" stroke-opacity="null" stroke-width="0" stroke="#FF0000" fill="#000000" font-weight="bold">P</text>
+ </g>
+</svg>
