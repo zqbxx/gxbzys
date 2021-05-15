@@ -1,0 +1,17 @@
+<svg width="1000" height="309" xmlns="http://www.w3.org/2000/svg">
+ <!-- Created with UXWing SVG Editor - https://uxwing.com/svg-icon-editor/ -->
+
+ <g>
+  <title>background</title>
+  <rect fill="#000000" id="canvas_background" height="311" width="1002" y="-1" x="-1"/>
+  <g display="none" id="canvasGrid">
+   <rect fill="url(#gridpattern)" stroke-width="0" y="0" x="0" height="100%" width="100%" id="svg_2"/>
+  </g>
+ </g>
+ <g>
+  <title>Layer 1</title>
+  <text transform="matrix(7.45653, 0, 0, 6.74433, -661.726, -549.19)" font-weight="bold" xml:space="preserve" text-anchor="start" font-family="'Courier New', Courier, monospace" font-size="24" id="svg_1" y="110.73803" x="95.6155" stroke-width="0" stroke="#FF0000" fill="#ffffff">Your</text>
+  <rect rx="15" id="svg_2" height="186.12177" width="435.99998" y="61.43912" x="521.66657" stroke-opacity="null" stroke-width="0" stroke="#FF0000" fill="#ff9900"/>
+  <text transform="matrix(3.92353, 0, 0, 5.04313, -290.758, -1085.51)" xml:space="preserve" text-anchor="start" font-family="'Courier New', Courier, monospace" font-size="28" id="svg_4" y="254.6836" x="210.94469" stroke-opacity="null" stroke-width="0" stroke="#FF0000" fill="#000000" font-weight="bold">Player</text>
+ </g>
+</svg>
