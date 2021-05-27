@@ -10,7 +10,12 @@ You can create your own key file to encrypt and decrypt video files. Key file ca
 
 # Document
 
-:movie_camera: [Demo](doc/demo.md)
+:movie_camera: Demo 
+
+- [x] [Create Key](doc/CreateKey.md)
+- [x] [Encrypt Video](doc/EncryptVideo.md)
+- [x] [Play Video](doc/PlayEncryptedVideo.md)
+
 
 :bricks: [File Structure](doc/file_structure.md)
 
