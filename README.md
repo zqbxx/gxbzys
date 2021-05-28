@@ -3,7 +3,7 @@
 
 
 YourPlayer is a video player based on libmpv. 
-The main purpose of this video player is to protect your private video. It also provide some basic functions of a video player should have. 
+The main purpose of this video player is to protect your private video. It also provide some basic functions a video player should have. 
 
 YourPlayer can encrypt videos and play them without temporary decrypted contents on disk. 
 You can create your own key file to encrypt and decrypt video files. Key file can be stored on different device.
