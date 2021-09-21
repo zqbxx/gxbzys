@@ -47,10 +47,18 @@ class SMPVPlayer(QObject):
         self._install_key_bindings()
 
         self.check_thread = None
+        self.cancel_top_thread = None
+
+        self.player.ontop = True
 
     def start(self):
+        def cancel_top():
+            time.sleep(1)
+            self.player.ontop = False
+        self.cancel_top_thread = threading.Thread(target=cancel_top)
         self.check_thread = threading.Thread(target=self._run)
         self.check_thread.start()
+        self.cancel_top_thread.start()
 
     def event(self, event: QEvent) -> bool:
 
