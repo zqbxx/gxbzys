@@ -1,0 +1,6 @@
+PySide2
+qtawesome
+qtmodern
+pycryptodome
+axel
+macast

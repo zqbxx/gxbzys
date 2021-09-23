@@ -1,6 +1,10 @@
 import sys
 import os
-os.environ["PATH"] += os.pathsep + '.'
+#os.environ["PATH"] += os.pathsep + '.'
+from macast import Setting
+
+os.environ["PATH"] = os.path.dirname(__file__) + os.pathsep + os.environ["PATH"]
+print(os.environ["PATH"])
 
 
 from PySide2.QtCore import Qt
@@ -62,7 +66,8 @@ def main():
     )
     smpv_player = SMPVPlayer()
     smpv_player.start()
-    sys.exit(app.exec_())
+    result = app.exec_()
+    sys.exit(result)
 
 
 if __name__ == "__main__":
