@@ -1,7 +1,5 @@
 import sys
 import os
-#os.environ["PATH"] += os.pathsep + '.'
-from macast import Setting
 
 os.environ["PATH"] = os.path.dirname(__file__) + os.pathsep + os.environ["PATH"]
 print(os.environ["PATH"])

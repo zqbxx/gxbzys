@@ -1,4 +1,3 @@
-import functools
 import os
 import threading
 import time
@@ -12,7 +11,6 @@ import qtawesome as qta
 from PySide2.QtCore import QObject, QMutex, QEvent, Qt, QMimeData, QPoint, QSize, Signal
 from PySide2.QtGui import QCursor, QIcon, QDrag, QPixmap, QDragMoveEvent, QDropEvent
 from PySide2.QtWidgets import QApplication, QMessageBox, QAction, QMenu, QFileDialog, QLabel, QWidget, QHBoxLayout
-from macast import cli, ssdp, Setting
 
 from gxbzys.dialogs import KeyMgrDialog
 from gxbzys.plugin import Plugins
