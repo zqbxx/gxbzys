@@ -1,6 +1,3 @@
 [
-  {
-    "name": "dlna_render",
-    "class": "render.DLNARenderPlugin"
-  }
+
 ]
