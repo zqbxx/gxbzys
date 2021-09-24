@@ -3,4 +3,3 @@ qtawesome
 qtmodern
 pycryptodome
 axel
-macast
