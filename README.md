@@ -18,10 +18,11 @@ You can create your own key file to encrypt and decrypt video files. Key file ca
 
 :point_up:  [Shortcuts](doc/Shortcuts.md)
 
-
 :bricks: [File Structure](doc/file_structure.md)
 
 :hammer_and_wrench: [Compile](doc/compile.md)
+
+:tv: [DLNA Render](https://github.com/zqbxx/gxbzys-dlna-render)
 
 # Download
 :link: https://github.com/zqbxx/gxbzys/releases
