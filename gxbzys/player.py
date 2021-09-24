@@ -15,7 +15,7 @@ from PySide2.QtWidgets import QApplication, QMessageBox, QAction, QMenu, QFileDi
 from macast import cli, ssdp, Setting
 
 from gxbzys.dialogs import KeyMgrDialog
-from gxbzys.macastrender import YRRenderer
+from gxbzys.plugin import Plugins
 from gxbzys.smpv import MpvEventType, MpvCryptoEvent, CryptoType, SMPV, VideoAspects, VideoAspect, VideoRotate, \
     Tracks, PlayList, PlayListFile
 from keymanager.utils import ICON_COLOR
@@ -52,10 +52,16 @@ class SMPVPlayer(QObject):
         self.cancel_top_thread = None
 
         self.player.ontop = True
-        self.dlna_render = YRRenderer(self.player)
-        def start_dlna_render():
-            cli(self.dlna_render)
-        threading.Thread(target=start_dlna_render).start()
+
+        #module = __import__('dlnarender')
+        #plugin_class = getattr(module, 'DLNARenderPlugin')
+        self.plugins = Plugins('plugin.json', self.player)
+        self.plugins.load_all()
+        self.plugins.start_all()
+        #self.dlna_render = YRRenderer(self.player)
+        #def start_dlna_render():
+        #    cli(self.dlna_render)
+        #threading.Thread(target=start_dlna_render).start()
 
     def start(self):
         def cancel_top():
@@ -76,7 +82,7 @@ class SMPVPlayer(QObject):
             app = QApplication.instance()
             if app.activeWindow() is not None:
                 app.activeWindow().close()
-            Setting.stop_service()
+            self.plugins.destroy_all()
             self.player.terminate()
             self.key_mgr_dialog.close()
             self.app.closeAllWindows()

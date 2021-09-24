@@ -1,15 +1,12 @@
+from gxbzys.utils import init_nuitka_env
+init_nuitka_env()
 import sys
-
-from PySide2.QtCore import QThread, Signal, Qt, QTextStream
-from PySide2.QtGui import QPalette, QColor
-from PySide2.QtWidgets import QApplication
 import os
-os.environ['QT_API'] = 'PySide2'
-from gxbzys.dialogs import KeyMgrDialog
-from PySide2.QtCore import QFile
+from PySide2.QtWidgets import QApplication
 
+os.environ['QT_API'] = 'PySide2'
 os.environ["PATH"] = '.' + os.pathsep + os.environ["PATH"]
-from keymanager import iconic
+
 from gxbzys.player import SMPVPlayer
 from keymanager import utils as kmutils
 
