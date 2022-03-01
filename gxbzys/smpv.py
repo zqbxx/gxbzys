@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import List, Dict
 from urllib.parse import urlparse
 
-from PySide2.QtCore import QEvent, QObject
-from PySide2.QtWidgets import QApplication
+from PySide6.QtCore import QEvent, QObject
+from PySide6.QtWidgets import QApplication
 
 from gxbzys import mpv
 from gxbzys.mpv import MPV, StreamOpenFn, StreamReadFn, StreamCloseFn, StreamSeekFn, StreamSizeFn, register_protocol

@@ -1,4 +1,4 @@
-PySide2
+PySide6
 qtawesome
 qtmodern
 pycryptodome

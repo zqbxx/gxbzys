@@ -2,9 +2,9 @@ import threading
 from typing import Callable
 import os
 
-from PySide2 import QtGui
-from PySide2.QtCore import Qt
-from PySide2.QtWidgets import QProgressDialog, QMessageBox
+from PySide6 import QtGui
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QProgressDialog, QMessageBox
 
 import keymanager.dialogs as dialog
 from gxbzys.video import VideoHead, VideoInfo, write_encrypt_video, VideoStream

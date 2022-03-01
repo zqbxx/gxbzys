@@ -2,7 +2,7 @@ from gxbzys.utils import init_nuitka_env
 init_nuitka_env()
 import sys
 import os
-from PySide2.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 
 os.environ['QT_API'] = 'PySide2'
 os.environ["PATH"] = '.' + os.pathsep + os.environ["PATH"]

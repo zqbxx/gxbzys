@@ -6,11 +6,11 @@ from pathlib import Path
 from typing import List, Callable, Dict, TypeVar
 from urllib.parse import urlparse
 
-import PySide2
+import PySide6
 import qtawesome as qta
-from PySide2.QtCore import QObject, QMutex, QEvent, Qt, QMimeData, QPoint, QSize, Signal
-from PySide2.QtGui import QCursor, QIcon, QDrag, QPixmap, QDragMoveEvent, QDropEvent
-from PySide2.QtWidgets import QApplication, QMessageBox, QAction, QMenu, QFileDialog, QLabel, QWidget, QHBoxLayout
+from PySide6.QtCore import QObject, QMutex, QEvent, Qt, QMimeData, QPoint, QSize, Signal
+from PySide6.QtGui import QCursor, QIcon, QDrag, QPixmap, QDragMoveEvent, QDropEvent, QAction
+from PySide6.QtWidgets import QApplication, QMessageBox, QMenu, QFileDialog, QLabel, QWidget, QHBoxLayout
 
 from gxbzys.dialogs import KeyMgrDialog
 from gxbzys.plugin import Plugins
@@ -762,7 +762,7 @@ class QDraggableMenu(QMenu):
     def defaultDropDone(self, source: QAction, target: QAction, parent: QMenu):
         parent.insertAction(target, source)
 
-    def mousePressEvent(self, event: PySide2.QtGui.QMouseEvent) -> None:
+    def mousePressEvent(self, event: PySide6.QtGui.QMouseEvent) -> None:
         super().mousePressEvent(event)
         self.source_action = self.activeAction()
         if self.source_action is not None and self.action_support_drag(self.source_action):
@@ -777,7 +777,7 @@ class QDraggableMenu(QMenu):
             drag.setMimeData(mimedata)
             drag.exec_()
 
-    def mouseReleaseEvent(self, event: PySide2.QtGui.QMouseEvent) -> None:
+    def mouseReleaseEvent(self, event: PySide6.QtGui.QMouseEvent) -> None:
         # 触发keypress以后如果没有触发dragMoveEvent则mouseReleaseEvent不会触发
         # 全部放到dropEvent中处理
 

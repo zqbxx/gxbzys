@@ -5,10 +5,9 @@ os.environ["PATH"] = os.path.dirname(__file__) + os.pathsep + os.environ["PATH"]
 print(os.environ["PATH"])
 
 
-from PySide2.QtCore import Qt
-from PySide2.QtGui import QPalette, QColor
-from PySide2.QtWidgets import QApplication
-from keymanager import iconic
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QPalette, QColor
+from PySide6.QtWidgets import QApplication
 
 
 from gxbzys.player import SMPVPlayer
