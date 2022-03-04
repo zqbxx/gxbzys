@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 import PySide6
 import qtawesome as qta
 from PySide6.QtCore import QObject, QMutex, QEvent, Qt, QMimeData, QPoint, QSize, Signal
-from PySide6.QtGui import QCursor, QIcon, QDrag, QPixmap, QDragMoveEvent, QDropEvent, QAction
+from PySide6.QtGui import QCursor, QIcon, QDrag, QDragMoveEvent, QDropEvent, QAction
 from PySide6.QtWidgets import QApplication, QMessageBox, QMenu, QFileDialog, QLabel, QWidget, QHBoxLayout
 
 from gxbzys.dialogs import KeyMgrDialog
@@ -770,7 +770,7 @@ class QDraggableMenu(QMenu):
             t_menu = QMenu(self.source_action.text())
             t_menu.setIcon(self.source_action.icon())
             label = IconLabel(self.source_action.icon(), self.source_action.text())
-            drag.setPixmap(QPixmap.grabWidget(label))
+            drag.setPixmap(QWidget.grab(label))
             drag.setHotSpot(QPoint(5, 5))
             mimedata = QMimeData()
             mimedata.setText(self.source_action.text())
