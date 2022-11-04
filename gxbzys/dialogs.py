@@ -96,12 +96,44 @@ class EncryptFileDialog(dialog.EncryptFileDialog):
 
                     def updater(i, length):
                         percent = int((i+1)/length*100)
-                        pd.setValue(index * 100 + percent)
-                        pd.setLabelText(f'正在处理：{(index+1)} / {file_cnt} 当前文件：{percent}%')
+                        pd.setValue(index * 100 + percent/2)
+                        pd.setLabelText(f'正在处理：{(index+1)} / {file_cnt} 当前文件：{percent/2}%')
 
                     write_encrypt_video(self.key.key, head, [video_info], reader, writer, videowritehook=updater)
                     writer.close()
                     reader.close()
+
+                    #校验文件
+                    bufsize = 8 * 1024
+                    file_size = os.stat(output_file).st_size
+                    readed_size = 0
+                    verify_result = True
+                    fp1 = VideoStream(output_file, self.key.key)
+                    fp2 = open(input_file, 'rb')
+                    fp1.open()
+
+                    try:
+                        while True:
+                            b1 = fp1.read(bufsize)
+                            b2 = fp2.read(bufsize)
+                            readed_size += len(b1)
+                            if b1 != b2:
+                                QMessageBox.critical(pd, '处理失败', f'文件{input_file_name}校验失败')
+                                verify_result = False
+                                break
+                            if not b2:
+                                verify_result = True
+                                break
+
+                            pd.setLabelText(f'正在处理：{(index + 1)} / {file_cnt} 当前文件：{50 + round((readed_size/file_size)*50)}%')
+                            pd.setValue(index * 100 + 50 + (readed_size/file_size)*50)
+                    finally:
+                        fp2.close()
+                        fp1.close()
+
+                    if not verify_result:
+                        break
+
 
             if not pd.wasCanceled():
                 QMessageBox.information(pd, '处理完成', self.success_msg)
