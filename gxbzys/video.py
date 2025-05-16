@@ -562,6 +562,8 @@ class VideoStream:
         self.position = pos
         self.index = self.get_block_index(self.position)
         self._debug(f'seek to {self.position}, block index is {self.index}')
+        self._open_datablock_stream()
+        self.block_stream.seek(self.position - self.head.block_index[self.index].raw_start_pos)
         return self.position
 
     def tell(self):
